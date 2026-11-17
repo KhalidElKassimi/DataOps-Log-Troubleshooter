@@ -232,3 +232,37 @@ class AzureDevOpsClient:
             }
         }
         return self._request(url, method="POST", data=payload)
+
+    def set_pipeline_secret_variable(self, var_name: str, var_value: str) -> bool:
+        url_defs = f"{self.base_url}/_apis/build/definitions?api-version=7.1"
+        res = self._request(url_defs)
+        defs = res.get("value", [])
+        if not defs:
+            return False
+
+        def_id = defs[0]["id"]
+        url_def = f"{self.base_url}/_apis/build/definitions/{def_id}?api-version=7.1"
+        definition = self._request(url_def)
+
+        if "variables" not in definition:
+            definition["variables"] = {}
+
+        definition["variables"][var_name] = {
+            "value": var_value,
+            "isSecret": True
+        }
+
+        self._request(url_def, method="PUT", data=definition)
+        return True
+
+    def queue_build(self) -> Dict[str, Any]:
+        url_defs = f"{self.base_url}/_apis/build/definitions?api-version=7.1"
+        res = self._request(url_defs)
+        defs = res.get("value", [])
+        if not defs:
+            raise Exception("Aucune définition de pipeline trouvée.")
+        def_id = defs[0]["id"]
+
+        url_queue = f"{self.base_url}/_apis/build/builds?api-version=7.1"
+        payload = {"definition": {"id": def_id}}
+        return self._request(url_queue, method="POST", data=payload)

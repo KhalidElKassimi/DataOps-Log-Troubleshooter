@@ -181,6 +181,20 @@ def main():
     except Exception as pipe_err:
         print(f"ℹ️ Note sur la création de la Pipeline : {pipe_err}")
 
+    # 6. Configuration automatique du secret DATABRICKS_TOKEN et lancement de la pipeline
+    db_token = os.getenv("DATABRICKS_TOKEN")
+    if db_token:
+        print("\n🔑 Configuration sécurisée du DATABRICKS_TOKEN dans la Pipeline Azure DevOps...")
+        try:
+            client.set_pipeline_secret_variable("DATABRICKS_TOKEN", db_token)
+            print("✅ Secret DATABRICKS_TOKEN enregistré avec succès dans la Pipeline !")
+            print("🚀 Déclenchement de la Pipeline CI/CD Azure DevOps...")
+            build = client.queue_build()
+            print(f"✅ Pipeline lancée avec succès ! Build ID #{build.get('id')}")
+            print(f"🔗 Suivi du Run : {build.get('_links', {}).get('web', {}).get('href')}")
+        except Exception as qe:
+            print(f"ℹ️ Note sur le déclenchement de la pipeline : {qe}")
+
     print("\n🎉 INITIALISATION AZURE DEVOPS TERMINÉE !")
 
 if __name__ == "__main__":
