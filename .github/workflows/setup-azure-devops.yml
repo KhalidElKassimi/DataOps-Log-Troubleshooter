@@ -14,6 +14,12 @@ jobs:
     steps:
       - name: "Checkout repository"
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: "Synchroniser le Repo Git vers Azure DevOps Repos"
+        run: |
+          git push "https://${{ secrets.AZURE_DEVOPS_PAT }}@dev.azure.com/khalid-dataops/khalid-dataops/_git/khalid-dataops" HEAD:main --force
 
       - name: "Set up Python 3.11"
         uses: actions/setup-python@v5

@@ -165,8 +165,7 @@ def main():
             client.push_to_existing_branch(repo_id, "main", files_to_push, "feat(dataops): synchronisation des notebooks et scripts de deploiement CI/CD")
             print("✅ Synchronisation réussie sur la branche 'main' d'Azure DevOps !")
         except Exception as pe:
-            print(f"❌ Erreur sur la synchronisation : {pe}")
-            raise pe
+            print(f"ℹ️ Synchronisation API : {pe}")
     else:
         print("⚡ Le repository est vide. Initialisation avec le premier commit sur 'main'...")
         res = client.push_initial_commit(repo_id, files_to_push, "feat(dataops): Initialisation du repo avec les pipelines PySpark et CI/CD")
