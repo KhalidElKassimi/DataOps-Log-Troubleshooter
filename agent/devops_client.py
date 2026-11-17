@@ -2,6 +2,7 @@ import base64
 import json
 import urllib.request
 import urllib.error
+import urllib.parse
 from typing import Dict, Any, List, Optional
 
 class AzureDevOpsClient:
@@ -45,13 +46,23 @@ class AzureDevOpsClient:
         res = self._request(url)
         return res.get("value", [])
 
+    def get_boards(self, team_name: str) -> List[Dict[str, Any]]:
+        encoded_team = urllib.parse.quote(team_name)
+        url = f"https://dev.azure.com/{self.org}/{self.project}/{encoded_team}/_apis/work/boards?api-version=7.1-preview.1"
+        res = self._request(url)
+        return res.get("value", [])
+
     def get_board_columns(self, team_name: str, board_id: str = "Stories") -> List[Dict[str, Any]]:
-        url = f"https://dev.azure.com/{self.org}/{self.project}/{team_name}/_apis/work/boards/{board_id}/columns?api-version=7.1-preview.1"
+        encoded_team = urllib.parse.quote(team_name)
+        encoded_board = urllib.parse.quote(board_id)
+        url = f"https://dev.azure.com/{self.org}/{self.project}/{encoded_team}/_apis/work/boards/{encoded_board}/columns?api-version=7.1-preview.1"
         res = self._request(url)
         return res.get("value", [])
 
     def set_board_columns(self, team_name: str, columns: List[Dict[str, Any]], board_id: str = "Stories") -> Dict[str, Any]:
-        url = f"https://dev.azure.com/{self.org}/{self.project}/{team_name}/_apis/work/boards/{board_id}/columns?api-version=7.1-preview.1"
+        encoded_team = urllib.parse.quote(team_name)
+        encoded_board = urllib.parse.quote(board_id)
+        url = f"https://dev.azure.com/{self.org}/{self.project}/{encoded_team}/_apis/work/boards/{encoded_board}/columns?api-version=7.1-preview.1"
         return self._request(url, method="PUT", data=columns)
 
     def get_repositories(self) -> List[Dict[str, Any]]:

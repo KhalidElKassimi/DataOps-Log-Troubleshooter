@@ -57,75 +57,77 @@ def main():
     print("\n📋 Configuration du Board Agile...")
     target_columns = ["Backlog", "In Dev", "In Progress", "In PR", "In QA", "Done"]
     try:
-        # Essayer sur le board 'Stories' ou 'Issues' selon le process (Scrum / Agile / Basic)
-        for board_candidate in ["Stories", "Backlog items", "Issues", "Epics"]:
+        boards = client.get_boards(team_name=team_name)
+        print(f"   Boards détectés ({len(boards)}) : {[b.get('name') for b in boards]}")
+
+        for board in boards:
+            board_id = board.get("id")
+            board_name = board.get("name")
+            print(f"\n🔍 Analyse du Board : '{board_name}' (ID: {board_id})...")
+
             try:
-                current_cols = client.get_board_columns(team_name=team_name, board_id=board_candidate)
-                if current_cols:
-                    print(f"   Board trouvé : '{board_candidate}' avec {len(current_cols)} colonnes existantes :")
-                    for col in current_cols:
-                        print(f"   - {col.get('name')} ({col.get('columnType')})")
+                current_cols = client.get_board_columns(team_name=team_name, board_id=board_id)
+                print(f"   Colonnes existantes ({len(current_cols)}) : {[c.get('name') for c in current_cols]}")
 
-                    # Extraction des stateMappings existants (indispensable pour l'API Azure DevOps)
-                    incoming_mapping = {}
-                    inprogress_mapping = {}
-                    outgoing_mapping = {}
-                    incoming_id = None
-                    outgoing_id = None
+                # Extraction des stateMappings existants
+                incoming_mapping = {}
+                inprogress_mapping = {}
+                outgoing_mapping = {}
+                incoming_id = None
+                outgoing_id = None
 
-                    for col in current_cols:
-                        c_type = col.get("columnType")
-                        s_map = col.get("stateMappings", {})
-                        if c_type == "incoming":
-                            incoming_mapping = s_map
-                            incoming_id = col.get("id")
-                        elif c_type == "outgoing":
-                            outgoing_mapping = s_map
-                            outgoing_id = col.get("id")
-                        elif c_type == "inProgress" and not inprogress_mapping:
-                            inprogress_mapping = s_map
+                for col in current_cols:
+                    c_type = col.get("columnType")
+                    s_map = col.get("stateMappings", {})
+                    if c_type == "incoming":
+                        incoming_mapping = s_map
+                        incoming_id = col.get("id")
+                    elif c_type == "outgoing":
+                        outgoing_mapping = s_map
+                        outgoing_id = col.get("id")
+                    elif c_type == "inProgress" and not inprogress_mapping:
+                        inprogress_mapping = s_map
 
-                    if not inprogress_mapping:
-                        inprogress_mapping = incoming_mapping
+                if not inprogress_mapping:
+                    inprogress_mapping = incoming_mapping
 
-                    # Création de la liste des 6 colonnes avec les stateMappings valides
-                    new_cols = []
-                    for i, col_name in enumerate(target_columns):
-                        if i == 0:
-                            col_dict = {
-                                "id": incoming_id,
-                                "name": col_name,
-                                "itemLimit": 0,
-                                "columnType": "incoming",
-                                "stateMappings": incoming_mapping
-                            }
-                        elif i == len(target_columns) - 1:
-                            col_dict = {
-                                "id": outgoing_id,
-                                "name": col_name,
-                                "itemLimit": 0,
-                                "columnType": "outgoing",
-                                "stateMappings": outgoing_mapping
-                            }
-                        else:
-                            col_dict = {
-                                "name": col_name,
-                                "itemLimit": 0,
-                                "columnType": "inProgress",
-                                "stateMappings": inprogress_mapping
-                            }
-                        new_cols.append(col_dict)
+                # Création des 6 colonnes demandées
+                new_cols = []
+                for i, col_name in enumerate(target_columns):
+                    if i == 0:
+                        col_dict = {
+                            "id": incoming_id,
+                            "name": col_name,
+                            "itemLimit": 0,
+                            "columnType": "incoming",
+                            "stateMappings": incoming_mapping
+                        }
+                    elif i == len(target_columns) - 1:
+                        col_dict = {
+                            "id": outgoing_id,
+                            "name": col_name,
+                            "itemLimit": 0,
+                            "columnType": "outgoing",
+                            "stateMappings": outgoing_mapping
+                        }
+                    else:
+                        col_dict = {
+                            "name": col_name,
+                            "itemLimit": 0,
+                            "columnType": "inProgress",
+                            "stateMappings": inprogress_mapping
+                        }
+                    new_cols.append(col_dict)
 
-                    print(f"   Application des 6 colonnes sur le board '{board_candidate}'...")
-                    updated = client.set_board_columns(team_name=team_name, columns=new_cols, board_id=board_candidate)
-                    print(f"✅ Board '{board_candidate}' mis à jour avec les 6 colonnes :")
-                    print(f"   👉 {' -> '.join(target_columns)}")
-                    break
+                print(f"   🚀 Application des 6 colonnes sur le board '{board_name}'...")
+                updated = client.set_board_columns(team_name=team_name, columns=new_cols, board_id=board_id)
+                print(f"✅ Succès ! Board '{board_name}' mis à jour avec les 6 colonnes :")
+                print(f"   👉 {' -> '.join(target_columns)}")
             except Exception as be:
-                print(f"   ℹ️ Essai sur '{board_candidate}' non applicable : {be}")
-                continue
+                print(f"   ❌ Erreur sur '{board_name}' : {be}")
+
     except Exception as e:
-        print(f"⚠️ Note sur la mise à jour des colonnes : {e}")
+        print(f"⚠️ Erreur globale lors de la détection des boards : {e}")
 
     # 4. Vérification et initialisation du Git Repository
     print("\n📦 Configuration du Git Repository...")
