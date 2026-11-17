@@ -25,5 +25,6 @@ jobs:
           AZURE_DEVOPS_ORG: "khalid-dataops"
           AZURE_DEVOPS_PROJECT: "khalid-dataops"
           AZURE_DEVOPS_PAT: ${{ secrets.AZURE_DEVOPS_PAT }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: |
           python scripts/setup_azure_devops.py
