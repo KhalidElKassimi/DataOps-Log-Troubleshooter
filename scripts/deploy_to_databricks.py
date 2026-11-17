@@ -34,7 +34,7 @@ def get_or_create_job(host: str, headers: dict) -> int:
     except Exception as e:
         print(f"⚠️ Recherche du job : {e}")
 
-    node_type = os.getenv("DATABRICKS_NODE_TYPE", "Standard_D4s_v3")
+    node_type = os.getenv("DATABRICKS_NODE_TYPE", "Standard_D4as_v5")
     job_settings = {
         "name": "workflow-sales-pipeline-troubleshooter",
         "job_clusters": [
