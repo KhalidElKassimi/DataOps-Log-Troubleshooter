@@ -82,7 +82,8 @@ def get_or_create_job(host: str, headers: dict) -> int:
                         "azure_devops_org": os.getenv("AZURE_DEVOPS_ORG", "khalid-dataops"),
                         "azure_devops_proj": os.getenv("AZURE_DEVOPS_PROJECT", "khalid-dataops"),
                         "azure_devops_pat": os.getenv("AZURE_DEVOPS_PAT", ""),
-                        "teams_webhook_url": os.getenv("TEAMS_WEBHOOK_URL", "")
+                        "teams_webhook_url": os.getenv("TEAMS_WEBHOOK_URL", ""),
+                        "outlook_logic_app_url": os.getenv("OUTLOOK_LOGIC_APP_URL", "")
                     }
                 }
             }

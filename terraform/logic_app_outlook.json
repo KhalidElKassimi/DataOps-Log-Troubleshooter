@@ -1,0 +1,101 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "resources": [
+    {
+      "type": "Microsoft.Web/connections",
+      "apiVersion": "2016-06-01",
+      "name": "outlook",
+      "location": "eastus",
+      "properties": {
+        "displayName": "elkassimi.khalid07@outlook.com",
+        "api": {
+          "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/eastus/managedApis/outlook')]"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Logic/workflows",
+      "apiVersion": "2019-05-01",
+      "name": "logic-dataops-outlook-sender",
+      "location": "eastus",
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/connections', 'outlook')]"
+      ],
+      "properties": {
+        "state": "Enabled",
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "$connections": {
+              "type": "Object",
+              "defaultValue": {}
+            }
+          },
+          "triggers": {
+            "manual": {
+              "type": "Request",
+              "kind": "Http",
+              "inputs": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "to": { "type": "string" },
+                    "subject": { "type": "string" },
+                    "body": { "type": "string" }
+                  },
+                  "required": ["to", "subject", "body"]
+                }
+              }
+            }
+          },
+          "actions": {
+            "Send_an_email_(V2)": {
+              "type": "ApiConnection",
+              "inputs": {
+                "host": {
+                  "connection": {
+                    "name": "@parameters('$connections')['outlook']['connectionId']"
+                  }
+                },
+                "method": "post",
+                "path": "/v2/Mail",
+                "body": {
+                  "To": "@triggerBody()?['to']",
+                  "Subject": "@triggerBody()?['subject']",
+                  "Body": "@{triggerBody()?['body']}",
+                  "Importance": "High"
+                }
+              }
+            },
+            "Response": {
+              "type": "Response",
+              "inputs": {
+                "statusCode": 200,
+                "body": {
+                  "status": "success",
+                  "message": "Email sent successfully via Outlook connector"
+                }
+              },
+              "runAfter": {
+                "Send_an_email_(V2)": ["Succeeded"]
+              }
+            }
+          }
+        },
+        "parameters": {
+          "$connections": {
+            "value": {
+              "outlook": {
+                "connectionId": "[resourceId('Microsoft.Web/connections', 'outlook')]",
+                "connectionName": "outlook",
+                "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/eastus/managedApis/outlook')]"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

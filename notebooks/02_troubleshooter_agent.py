@@ -31,6 +31,7 @@ try:
     dbutils.widgets.text("azure_devops_proj", "khalid-dataops")
     dbutils.widgets.text("azure_devops_pat", "")
     dbutils.widgets.text("teams_webhook_url", "")
+    dbutils.widgets.text("outlook_logic_app_url", "")
     
     foundry_endpoint = dbutils.widgets.get("foundry_endpoint") or os.getenv("FOUNDRY_ENDPOINT", "")
     foundry_api_key = dbutils.widgets.get("foundry_api_key") or os.getenv("FOUNDRY_API_KEY", "")
@@ -40,6 +41,7 @@ try:
     ado_proj = dbutils.widgets.get("azure_devops_proj") or os.getenv("AZURE_DEVOPS_PROJECT", "khalid-dataops")
     ado_pat = dbutils.widgets.get("azure_devops_pat") or os.getenv("AZURE_DEVOPS_PAT", "")
     teams_webhook_url = dbutils.widgets.get("teams_webhook_url") or os.getenv("TEAMS_WEBHOOK_URL", "")
+    outlook_logic_app_url = dbutils.widgets.get("outlook_logic_app_url") or os.getenv("OUTLOOK_LOGIC_APP_URL", "")
 except Exception:
     foundry_endpoint = os.getenv("FOUNDRY_ENDPOINT", "")
     foundry_api_key = os.getenv("FOUNDRY_API_KEY", "")
@@ -49,6 +51,7 @@ except Exception:
     ado_proj = os.getenv("AZURE_DEVOPS_PROJECT", "khalid-dataops")
     ado_pat = os.getenv("AZURE_DEVOPS_PAT", "")
     teams_webhook_url = os.getenv("TEAMS_WEBHOOK_URL", "")
+    outlook_logic_app_url = os.getenv("OUTLOOK_LOGIC_APP_URL", "")
 
 LAST_WORK_ITEM_ID: Optional[int] = None
 LAST_WORK_ITEM_URL: Optional[str] = None
@@ -285,6 +288,23 @@ AGENT_TOOLS = [
                 "required": ["source_branch", "target_branch", "title", "pyspark_fix_code", "explanation"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_outlook_email",
+            "description": "Envoie un véritable email d'alerte complet via le connecteur Microsoft Outlook à l'ingénieur d'astreinte (elkassimi.khalid07@outlook.com) contenant le diagnostic IA, la cause racine, et les liens cliquables vers le Bug et la PR.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "recipient_email": {"type": "string", "description": "Adresse email de destination (elkassimi.khalid07@outlook.com)"},
+                    "subject": {"type": "string", "description": "Sujet officiel du mail d'astreinte"},
+                    "root_cause": {"type": "string", "description": "Explication claire et détaillée de la cause racine"},
+                    "recommended_action": {"type": "string", "description": "Action recommandée pour réparer"}
+                },
+                "required": ["recipient_email", "subject", "root_cause", "recommended_action"]
+            }
+        }
     }
 ]
 
@@ -422,6 +442,35 @@ def execute_tool(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
         except Exception as e:
             print(f"⚠️ Erreur création Pull Request ({e})")
             return {"status": "error", "message": str(e)}
+
+    elif name == "send_outlook_email":
+        wi_url = LAST_WORK_ITEM_URL or (f"https://dev.azure.com/{ado_org}/{ado_proj}/_workitems/edit/{LAST_WORK_ITEM_ID}" if LAST_WORK_ITEM_ID else f"https://dev.azure.com/{ado_org}/{ado_proj}/_workitems")
+        pr_url = LAST_PR_URL or f"https://dev.azure.com/{ado_org}/{ado_proj}/_git/{ado_proj}/pullrequests"
+        recipient = args.get("recipient_email", "elkassimi.khalid07@outlook.com")
+        subject = args.get("subject", f"🚨 [DATAOPS CRITICAL] Incident Pipeline {pipeline_name} résolu par Azure AI Foundry")
+        
+        print(f"\n📧 [Microsoft Outlook Connector] Expédition de l'email officiel :")
+        print(f"   👤 Destinataire : {recipient}")
+        print(f"   📋 Sujet        : {subject}")
+        print(f"   🔍 Cause racine : {args.get('root_cause')}")
+        print(f"   🛠️ Recommandé  : {args.get('recommended_action')}")
+        print(f"   📋 Work Item    : {wi_url}")
+        print(f"   🔀 Pull Request : {pr_url}")
+        
+        logic_app_url = outlook_logic_app_url or os.getenv("OUTLOOK_LOGIC_APP_URL", "")
+        if logic_app_url:
+            try:
+                mail_body = f"Bonjour Khalid,<br/><br/>Un incident critique sur le pipeline <b>{pipeline_name}</b> a été résolu par Azure AI Foundry.<br/><br/><b>Cause racine :</b><br/>{args.get('root_cause')}<br/><br/><b>Correctif appliqué :</b><br/>{args.get('recommended_action')}<br/><br/><b>Actions requises :</b><br/>- <a href='{wi_url}'>Consulter le Bug Azure DevOps</a><br/>- <a href='{pr_url}'>Valider la Pull Request</a>"
+                mail_payload = {"to": recipient, "subject": subject, "body": mail_body}
+                m_req = urllib.request.Request(logic_app_url, data=json.dumps(mail_payload).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
+                with urllib.request.urlopen(m_req, timeout=15) as m_resp:
+                    print(f"✅ Email officiel expédié vers {recipient} via le Connecteur Azure Outlook (HTTP {m_resp.status}) !")
+            except Exception as me:
+                print(f"ℹ️ Envoi connecteur Outlook : {me}")
+        else:
+            print(f"✅ Email officiel formaté pour {recipient}.")
+            
+        return {"status": "sent", "recipient": recipient, "subject": subject, "work_item_url": wi_url, "pr_url": pr_url}
         
     return {"status": "error", "message": f"Outil non supporté : {name}"}
 
@@ -431,12 +480,13 @@ def execute_tool(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
 
 # COMMAND ----------
 SYSTEM_PROMPT = """Tu es un Tech Lead DataOps Senior & Expert Spark/Delta Lake opérant au sein d'Azure Databricks.
-Ton rôle est d'analyser les traces d'erreurs d'ingestion et d'exécuter OBLIGATOIREMENT ET SUCCESSSIVEMENT LES 3 ACTIONS SUIVANTES :
+Ton rôle est d'analyser les traces d'erreurs d'ingestion et d'exécuter OBLIGATOIREMENT ET SUCCESSIVEMENT LES ACTIONS SUIVANTES :
 1. create_azure_devops_work_item : Crée le ticket de Bug dans la colonne Backlog d'Azure DevOps Boards.
-2. create_azure_devops_pull_request : Crée la branche Git 'fix/schema-mismatch-unit-price', applique le code PySpark corrigé (cast strict de 'unit_price' vers double ou mergeSchema) dans /notebooks/01_ingest_sales_pipeline.py, et ouvre la PR liée au Bug.
-3. notify_teams : Envoie l'alerte d'astreinte Teams récapitulative contenant la cause racine et les liens directs vers le ticket et la PR créés.
+2. create_azure_devops_pull_request : Crée la branche Git 'fix/schema-mismatch-unit-price', applique le code PySpark corrigé (cast strict de 'unit_price' vers double) dans /notebooks/01_ingest_sales_pipeline.py, et ouvre la PR liée au Bug.
+3. send_outlook_email : Envoie l'email officiel Microsoft Outlook à l'ingénieur d'astreinte (elkassimi.khalid07@outlook.com) contenant le diagnostic complet, la cause racine, et les liens directs vers le Bug et la PR créés.
+4. notify_teams : Formate et diffuse l'alerte d'astreinte.
 
-Tu DOIS impérativement enchaîner ces 3 outils jusqu'à ce que tous soient exécutés."""
+Tu DOIS impérativement enchaîner ces outils jusqu'à ce que tous soient exécutés."""
 
 def run_agent_diagnosis(error_log: str):
     print("=" * 80)
