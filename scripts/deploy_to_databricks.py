@@ -41,7 +41,7 @@ def get_or_create_job(host: str, headers: dict) -> int:
                 "job_cluster_key": "troubleshooter_cluster",
                 "new_cluster": {
                     "spark_version": "13.3.x-scala2.12",
-                    "node_type_id": "Standard_D4ds_v5",
+                    "node_type_id": "Standard_DS3_v2",
                     "num_workers": 0,
                     "spark_conf": {
                         "spark.master": "local[*]",
@@ -70,8 +70,12 @@ def get_or_create_job(host: str, headers: dict) -> int:
                     "notebook_path": "/Shared/02_troubleshooter_agent",
                     "base_parameters": {
                         "pipeline_name": "01_ingest_sales_pipeline",
-                        "azure_devops_org": "khalid-dataops",
-                        "azure_devops_proj": "khalid-dataops"
+                        "foundry_endpoint": os.getenv("FOUNDRY_ENDPOINT", "https://aifs-dataops-troubleshooter-dev-do3dh2.openai.azure.com/"),
+                        "foundry_api_key": os.getenv("FOUNDRY_API_KEY", ""),
+                        "ai_model_name": os.getenv("AI_MODEL_NAME", "gpt-4.1-mini"),
+                        "azure_devops_org": os.getenv("AZURE_DEVOPS_ORG", "khalid-dataops"),
+                        "azure_devops_proj": os.getenv("AZURE_DEVOPS_PROJECT", "khalid-dataops"),
+                        "azure_devops_pat": os.getenv("AZURE_DEVOPS_PAT", "")
                     }
                 }
             }

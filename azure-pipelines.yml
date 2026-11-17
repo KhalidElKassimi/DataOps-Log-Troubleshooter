@@ -55,3 +55,8 @@ stages:
       env:
         DATABRICKS_HOST: $(DATABRICKS_HOST)
         DATABRICKS_TOKEN: $(DATABRICKS_TOKEN)
+        FOUNDRY_ENDPOINT: 'https://aifs-dataops-troubleshooter-dev-do3dh2.openai.azure.com/'
+        AZURE_DEVOPS_ORG: 'khalid-dataops'
+        AZURE_DEVOPS_PROJECT: 'khalid-dataops'
+        AZURE_DEVOPS_PAT: $(AZURE_DEVOPS_PAT)
+        FOUNDRY_API_KEY: $(FOUNDRY_API_KEY)
