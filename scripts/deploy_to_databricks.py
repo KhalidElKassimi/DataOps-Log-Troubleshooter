@@ -81,7 +81,8 @@ def get_or_create_job(host: str, headers: dict) -> int:
                         "ai_model_name": os.getenv("AI_MODEL_NAME", "gpt-4.1-mini"),
                         "azure_devops_org": os.getenv("AZURE_DEVOPS_ORG", "khalid-dataops"),
                         "azure_devops_proj": os.getenv("AZURE_DEVOPS_PROJECT", "khalid-dataops"),
-                        "azure_devops_pat": os.getenv("AZURE_DEVOPS_PAT", "")
+                        "azure_devops_pat": os.getenv("AZURE_DEVOPS_PAT", ""),
+                        "teams_webhook_url": os.getenv("TEAMS_WEBHOOK_URL", "")
                     }
                 }
             }
