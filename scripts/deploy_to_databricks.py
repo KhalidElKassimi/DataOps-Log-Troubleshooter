@@ -34,7 +34,7 @@ def get_or_create_job(host: str, headers: dict) -> int:
     except Exception as e:
         print(f"⚠️ Recherche du job : {e}")
 
-    node_type = os.getenv("DATABRICKS_NODE_TYPE", "Standard_D4as_v5")
+    node_type = os.getenv("DATABRICKS_NODE_TYPE", "Standard_D4ads_v7")
     job_settings = {
         "name": "workflow-sales-pipeline-troubleshooter",
         "job_clusters": [
@@ -50,6 +50,11 @@ def get_or_create_job(host: str, headers: dict) -> int:
                     },
                     "custom_tags": {
                         "ResourceClass": "SingleNode"
+                    },
+                    "azure_attributes": {
+                        "first_on_demand": 1,
+                        "availability": "ON_DEMAND_AZURE",
+                        "spot_bid_max_price": -1.0
                     }
                 }
             }
