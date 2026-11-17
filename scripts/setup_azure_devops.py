@@ -66,21 +66,63 @@ def main():
                     for col in current_cols:
                         print(f"   - {col.get('name')} ({col.get('columnType')})")
 
-                    # Création de la liste des 6 colonnes
+                    # Extraction des stateMappings existants (indispensable pour l'API Azure DevOps)
+                    incoming_mapping = {}
+                    inprogress_mapping = {}
+                    outgoing_mapping = {}
+                    incoming_id = None
+                    outgoing_id = None
+
+                    for col in current_cols:
+                        c_type = col.get("columnType")
+                        s_map = col.get("stateMappings", {})
+                        if c_type == "incoming":
+                            incoming_mapping = s_map
+                            incoming_id = col.get("id")
+                        elif c_type == "outgoing":
+                            outgoing_mapping = s_map
+                            outgoing_id = col.get("id")
+                        elif c_type == "inProgress" and not inprogress_mapping:
+                            inprogress_mapping = s_map
+
+                    if not inprogress_mapping:
+                        inprogress_mapping = incoming_mapping
+
+                    # Création de la liste des 6 colonnes avec les stateMappings valides
                     new_cols = []
                     for i, col_name in enumerate(target_columns):
-                        col_type = "incoming" if i == 0 else ("outgoing" if i == len(target_columns) - 1 else "inProgress")
-                        new_cols.append({
-                            "name": col_name,
-                            "itemLimit": 0,
-                            "columnType": col_type
-                        })
+                        if i == 0:
+                            col_dict = {
+                                "id": incoming_id,
+                                "name": col_name,
+                                "itemLimit": 0,
+                                "columnType": "incoming",
+                                "stateMappings": incoming_mapping
+                            }
+                        elif i == len(target_columns) - 1:
+                            col_dict = {
+                                "id": outgoing_id,
+                                "name": col_name,
+                                "itemLimit": 0,
+                                "columnType": "outgoing",
+                                "stateMappings": outgoing_mapping
+                            }
+                        else:
+                            col_dict = {
+                                "name": col_name,
+                                "itemLimit": 0,
+                                "columnType": "inProgress",
+                                "stateMappings": inprogress_mapping
+                            }
+                        new_cols.append(col_dict)
 
+                    print(f"   Application des 6 colonnes sur le board '{board_candidate}'...")
                     updated = client.set_board_columns(team_name=team_name, columns=new_cols, board_id=board_candidate)
                     print(f"✅ Board '{board_candidate}' mis à jour avec les 6 colonnes :")
                     print(f"   👉 {' -> '.join(target_columns)}")
                     break
             except Exception as be:
+                print(f"   ℹ️ Essai sur '{board_candidate}' non applicable : {be}")
                 continue
     except Exception as e:
         print(f"⚠️ Note sur la mise à jour des colonnes : {e}")

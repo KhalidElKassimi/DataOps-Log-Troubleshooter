@@ -105,16 +105,21 @@ class DatabricksDevOpsHelper:
             return json.loads(content) if content else {}
 
     def create_work_item(self, title: str, description: str, repro_steps: str, column: str = "Backlog") -> Dict[str, Any]:
-        url = f"{self.base_url}/_apis/wit/workitems/$Bug?api-version=7.1-preview.3"
-        patch = [
-            {"op": "add", "path": "/fields/System.Title", "value": title},
-            {"op": "add", "path": "/fields/System.Description", "value": description},
-            {"op": "add", "path": "/fields/Microsoft.VSTS.Common.Priority", "value": 1},
-            {"op": "add", "path": "/fields/System.BoardColumn", "value": column}
-        ]
-        if repro_steps:
-            patch.append({"op": "add", "path": "/fields/Microsoft.VSTS.TCM.ReproSteps", "value": repro_steps})
-        return self.request(url, method="POST", data=patch, headers={"Content-Type": "application/json-patch+json"})
+        # Supporte à la fois le template 'Basic' (type Issue) et 'Scrum/Agile' (type Bug)
+        last_err = None
+        for item_type in ["Issue", "Bug"]:
+            try:
+                url = f"{self.base_url}/_apis/wit/workitems/${item_type}?api-version=7.1-preview.3"
+                full_desc = f"{description}<br/><br/><strong>Étapes de reproduction / Trace :</strong><pre>{repro_steps}</pre>"
+                patch = [
+                    {"op": "add", "path": "/fields/System.Title", "value": title},
+                    {"op": "add", "path": "/fields/System.Description", "value": full_desc}
+                ]
+                return self.request(url, method="POST", data=patch, headers={"Content-Type": "application/json-patch+json"})
+            except Exception as e:
+                last_err = e
+                continue
+        raise last_err or Exception("Impossible de créer le Work Item.")
 
     def update_work_item_column(self, work_item_id: int, new_column: str) -> Dict[str, Any]:
         url = f"https://dev.azure.com/{self.org}/_apis/wit/workitems/{work_item_id}?api-version=7.1-preview.3"

@@ -60,18 +60,20 @@ class AzureDevOpsClient:
         return res.get("value", [])
 
     def create_work_item(self, item_type: str, title: str, description: str, repro_steps: str, board_column: str = "Backlog", priority: int = 1) -> Dict[str, Any]:
-        url = f"{self.base_url}/_apis/wit/workitems/${item_type}?api-version=7.1-preview.3"
-        patch_doc = [
-            {"op": "add", "path": "/fields/System.Title", "value": title},
-            {"op": "add", "path": "/fields/System.Description", "value": description},
-            {"op": "add", "path": "/fields/Microsoft.VSTS.Common.Priority", "value": priority},
-            {"op": "add", "path": "/fields/System.BoardColumn", "value": board_column}
-        ]
-        if repro_steps:
-            patch_doc.append({"op": "add", "path": "/fields/Microsoft.VSTS.TCM.ReproSteps", "value": repro_steps})
-
-        headers = {"Content-Type": "application/json-patch+json"}
-        return self._request(url, method="POST", data=patch_doc, headers=headers)
+        last_err = None
+        for it in [item_type, "Issue", "Bug"]:
+            try:
+                url = f"{self.base_url}/_apis/wit/workitems/${it}?api-version=7.1-preview.3"
+                patch_doc = [
+                    {"op": "add", "path": "/fields/System.Title", "value": title},
+                    {"op": "add", "path": "/fields/System.Description", "value": f"{description}<br/><br/><strong>Trace :</strong><pre>{repro_steps}</pre>"}
+                ]
+                headers = {"Content-Type": "application/json-patch+json"}
+                return self._request(url, method="POST", data=patch_doc, headers=headers)
+            except Exception as e:
+                last_err = e
+                continue
+        raise last_err or Exception("Impossible de créer le Work Item.")
 
     def update_work_item_column(self, work_item_id: int, new_column: str) -> Dict[str, Any]:
         url = f"https://dev.azure.com/{self.org}/_apis/wit/workitems/{work_item_id}?api-version=7.1-preview.3"
