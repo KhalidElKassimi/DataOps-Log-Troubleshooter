@@ -171,6 +171,15 @@ def main():
         res = client.push_initial_commit(repo_id, files_to_push, "feat(dataops): Initialisation du repo avec les pipelines PySpark et CI/CD")
         print("✅ Repository initialisé avec succès avec 'main' !")
 
+    # 5. Enregistrement automatique de la Pipeline CI/CD dans Azure DevOps
+    print("\n🚀 Configuration de la Pipeline CI/CD dans Azure DevOps...")
+    try:
+        pipeline = client.create_pipeline(repo_id=repo_id, repo_name=repo_name, yaml_path="/azure-pipelines.yml", pipeline_name="CI-CD-Databricks-Pipeline")
+        print(f"✅ Pipeline CI/CD enregistrée avec succès dans Azure DevOps ! ID #{pipeline.get('id')}")
+        print(f"🔗 URL : https://dev.azure.com/{ORG}/{PROJECT}/_build?definitionId={pipeline.get('id')}")
+    except Exception as pipe_err:
+        print(f"ℹ️ Note sur la création de la Pipeline : {pipe_err}")
+
     print("\n🎉 INITIALISATION AZURE DEVOPS TERMINÉE !")
 
 if __name__ == "__main__":

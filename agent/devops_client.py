@@ -210,3 +210,19 @@ class AzureDevOpsClient:
         if work_item_ids:
             payload["workItemRefs"] = [{"id": str(wid)} for wid in work_item_ids]
         return self._request(url, method="POST", data=payload)
+
+    def create_pipeline(self, repo_id: str, repo_name: str, yaml_path: str = "/azure-pipelines.yml", pipeline_name: str = "CI-CD-Databricks-Pipeline") -> Dict[str, Any]:
+        url = f"{self.base_url}/_apis/pipelines?api-version=7.1"
+        payload = {
+            "name": pipeline_name,
+            "configuration": {
+                "type": "yaml",
+                "path": yaml_path,
+                "repository": {
+                    "id": repo_id,
+                    "name": repo_name,
+                    "type": "azureReposGit"
+                }
+            }
+        }
+        return self._request(url, method="POST", data=payload)
