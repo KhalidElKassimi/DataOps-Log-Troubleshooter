@@ -33,8 +33,8 @@ initial_data = [
 ]
 
 df_initial = spark.createDataFrame(initial_data, silver_schema)
-df_initial.write.format("delta").mode("overwrite").saveAsTable("silver_sales")
-print("Table silver_sales initialisée avec succès.")
+df_initial.write.format("delta").mode("overwrite").save("/tmp/delta/silver_sales")
+print("Table Delta /tmp/delta/silver_sales initialisée avec succès.")
 
 # COMMAND ----------
 # MAGIC %md
@@ -65,5 +65,5 @@ df_bad = spark.createDataFrame(bad_data, bad_batch_schema)
 # COMMAND ----------
 print("Tentative d'écriture du lot corrompu dans Delta Lake...")
 
-# Cette opération va échouer et générer la stacktrace que notre agent Foundry va analyser
-df_bad.write.format("delta").mode("append").saveAsTable("silver_sales")
+# Cette opération va échouer avec AnalysisException (Schema Mismatch) que notre agent Foundry va analyser
+df_bad.write.format("delta").mode("append").save("/tmp/delta/silver_sales")
