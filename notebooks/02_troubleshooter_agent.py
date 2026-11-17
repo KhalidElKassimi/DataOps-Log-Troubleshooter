@@ -110,7 +110,7 @@ class DatabricksDevOpsHelper:
             content = resp.read().decode("utf-8")
             return json.loads(content) if content else {}
 
-    def create_work_item(self, title: str, description: str, repro_steps: str, column: str = "Backlog") -> Dict[str, Any]:
+    def create_work_item(self, title: str, description: str, repro_steps: str, column: str = "Backlog", assigned_to: str = "elkassimi.khalid07@outlook.com") -> Dict[str, Any]:
         # Supporte à la fois le template 'Basic' (type Issue) et 'Scrum/Agile' (type Bug)
         last_err = None
         for item_type in ["Issue", "Bug"]:
@@ -121,6 +121,8 @@ class DatabricksDevOpsHelper:
                     {"op": "add", "path": "/fields/System.Title", "value": title},
                     {"op": "add", "path": "/fields/System.Description", "value": full_desc}
                 ]
+                if assigned_to:
+                    patch.append({"op": "add", "path": "/fields/System.AssignedTo", "value": assigned_to})
                 return self.request(url, method="POST", data=patch, headers={"Content-Type": "application/json-patch+json"})
             except Exception as e:
                 last_err = e
@@ -211,7 +213,7 @@ class DatabricksDevOpsHelper:
         print(f"✅ Commit de correction poussé avec succès sur '{fix_branch}' !")
         return res
 
-    def create_pull_request(self, repo_id: str, source_branch: str, target_branch: str, title: str, description: str, work_item_ids: Optional[List[int]] = None) -> Dict[str, Any]:
+    def create_pull_request(self, repo_id: str, source_branch: str, target_branch: str, title: str, description: str, work_item_ids: Optional[List[int]] = None, reviewer_id: Optional[str] = "498095d0-edd3-6a67-ae2f-c39ef05bb2d5") -> Dict[str, Any]:
         url = f"{self.base_url}/_apis/git/repositories/{repo_id}/pullrequests?api-version=7.1"
         payload = {
             "sourceRefName": f"refs/heads/{source_branch}",
@@ -221,6 +223,8 @@ class DatabricksDevOpsHelper:
         }
         if work_item_ids:
             payload["workItemRefs"] = [{"id": str(w)} for w in work_item_ids]
+        if reviewer_id:
+            payload["reviewers"] = [{"id": reviewer_id}]
         return self.request(url, method="POST", data=payload)
 
 # COMMAND ----------
@@ -353,11 +357,13 @@ def execute_tool(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
                 title=args.get("title", "[DATA-BUG] Crash Pipeline Databricks"),
                 description=f"<b>Diagnostic IA Foundry :</b><br/>{args.get('description')}",
                 repro_steps=args.get("repro_steps", ""),
-                column="Backlog"
+                column="Backlog",
+                assigned_to="elkassimi.khalid07@outlook.com"
             )
             LAST_WORK_ITEM_ID = wi.get("id")
             LAST_WORK_ITEM_URL = f"https://dev.azure.com/{ado_org}/{ado_proj}/_workitems/edit/{LAST_WORK_ITEM_ID}"
             print(f"✅ Ticket créé avec succès : ID #{LAST_WORK_ITEM_ID} dans [Backlog]")
+            print(f"📧 Notification email déclenchée vers : elkassimi.khalid07@outlook.com")
             print(f"🔗 URL : {LAST_WORK_ITEM_URL}")
             return {"status": "created", "work_item_id": LAST_WORK_ITEM_ID, "column": "Backlog", "url": LAST_WORK_ITEM_URL}
         except Exception as e:
