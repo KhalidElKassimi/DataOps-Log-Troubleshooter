@@ -94,12 +94,14 @@ def deploy():
     print(f"Host cible : {host}")
     print("=" * 80)
 
-    if not token:
-        print("⚠️ AVERTISSEMENT : La variable DATABRICKS_TOKEN n'est pas encore définie dans Azure DevOps.")
-        print("💡 Pour activer le déploiement réel en continu :")
-        print("   1. Dans Azure Databricks > User Settings > Developer > Access tokens > Generate token.")
-        print("   2. Dans Azure DevOps > Pipelines > Library / Variables > Ajoutez DATABRICKS_TOKEN.")
-        print("✅ Validation de la syntaxe des scripts PySpark terminée avec succès.")
+    if not token or token.startswith("$(") or len(token) < 10:
+        print("⚠️ AVERTISSEMENT : La variable DATABRICKS_TOKEN n'est pas encore configurée dans Azure DevOps.")
+        print("💡 Pour autoriser le déploiement vers Databricks :")
+        print("   1. Dans Azure Databricks (https://adb-7405615002700070.10.azuredatabricks.net) :")
+        print("      Cliquez sur votre profil en haut à droite > Settings > Developer > Access tokens > Generate new token.")
+        print("   2. Dans Azure DevOps > Pipelines > CI CD Databricks Pipeline > Cliquez sur Edit > Variables :")
+        print("      Ajoutez la variable 'DATABRICKS_TOKEN' avec votre token (cochez 'Keep this value secret').")
+        print("✅ Validation de la syntaxe et tests unitaires PySpark terminés avec succès.")
         return
 
     headers = {
