@@ -129,8 +129,8 @@ def main():
     except Exception as e:
         print(f"⚠️ Erreur globale lors de la détection des boards : {e}")
 
-    # 4. Vérification et initialisation du Git Repository
-    print("\n📦 Configuration du Git Repository...")
+    # 4. Synchronisation des Notebooks et de la CI/CD sur le Git Repository
+    print("\n📦 Configuration et synchronisation du Git Repository...")
     repos = client.get_repositories()
     if not repos:
         print("❌ Aucun repository Git trouvé dans le projet.")
@@ -141,23 +141,34 @@ def main():
     repo_name = repo["name"]
     print(f"📁 Repository sélectionné : {repo_name} (ID: {repo_id})")
 
+    # Lecture des fichiers à synchroniser sur main
+    pyspark_notebook = (root_dir / "notebooks" / "01_ingest_sales_pipeline.py").read_text(encoding="utf-8")
+    agent_notebook = (root_dir / "notebooks" / "02_troubleshooter_agent.py").read_text(encoding="utf-8")
+    deploy_script = (root_dir / "scripts" / "deploy_to_databricks.py").read_text(encoding="utf-8")
+    ci_cd_pipeline = (root_dir / "azure-pipelines.yml").read_text(encoding="utf-8")
+    readme = (root_dir / "README.md").read_text(encoding="utf-8")
+
+    files_to_push = {
+        "/notebooks/01_ingest_sales_pipeline.py": pyspark_notebook,
+        "/notebooks/02_troubleshooter_agent.py": agent_notebook,
+        "/scripts/deploy_to_databricks.py": deploy_script,
+        "/azure-pipelines.yml": ci_cd_pipeline,
+        "/README.md": readme
+    }
+
     # Vérification si la branche main a déjà un commit
     main_commit = client.get_default_branch_commit(repo_id, "main")
     if main_commit:
         print(f"ℹ️ La branche 'main' existe déjà (Commit: {main_commit[:8]}).")
+        print("⚡ Synchronisation des Notebooks (01_ingest et 02_agent) et de la CI/CD sur 'main'...")
+        try:
+            client.push_to_existing_branch(repo_id, "main", files_to_push, "feat(dataops): synchronisation des notebooks et scripts de deploiement CI/CD")
+            print("✅ Synchronisation réussie sur la branche 'main' d'Azure DevOps !")
+        except Exception as pe:
+            print(f"ℹ️ Note sur la synchronisation : {pe}")
     else:
         print("⚡ Le repository est vide. Initialisation avec le premier commit sur 'main'...")
-        # Lire le contenu des fichiers locaux
-        pyspark_notebook = (root_dir / "notebooks" / "01_ingest_sales_pipeline.py").read_text(encoding="utf-8")
-        ci_cd_pipeline = (root_dir / "azure-pipelines.yml").read_text(encoding="utf-8")
-        readme = (root_dir / "README.md").read_text(encoding="utf-8")
-
-        files_to_push = {
-            "/notebooks/01_ingest_sales_pipeline.py": pyspark_notebook,
-            "/azure-pipelines.yml": ci_cd_pipeline,
-            "/README.md": readme
-        }
-        res = client.push_initial_commit(repo_id, files_to_push, "feat(dataops): Initialisation du repo avec le pipeline PySpark et CI/CD")
+        res = client.push_initial_commit(repo_id, files_to_push, "feat(dataops): Initialisation du repo avec les pipelines PySpark et CI/CD")
         print("✅ Repository initialisé avec succès avec 'main' !")
 
     print("\n🎉 INITIALISATION AZURE DEVOPS TERMINÉE !")

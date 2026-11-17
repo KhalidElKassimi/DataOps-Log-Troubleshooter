@@ -130,6 +130,44 @@ class AzureDevOpsClient:
         }
         return self._request(url, method="POST", data=payload)
 
+    def push_to_existing_branch(self, repo_id: str, branch: str, files: Dict[str, str], commit_message: str) -> Dict[str, Any]:
+        base_commit = self.get_default_branch_commit(repo_id, branch)
+        if not base_commit:
+            return self.push_initial_commit(repo_id, files, commit_message)
+
+        url = f"{self.base_url}/_apis/git/repositories/{repo_id}/pushes?api-version=7.1"
+        changes = []
+        for path, content in files.items():
+            changes.append({
+                "changeType": "add",
+                "item": {"path": path},
+                "newContent": {
+                    "content": content,
+                    "contentType": "rawtext"
+                }
+            })
+        payload = {
+            "refUpdates": [
+                {
+                    "name": f"refs/heads/{branch}",
+                    "oldObjectId": base_commit
+                }
+            ],
+            "commits": [
+                {
+                    "comment": commit_message,
+                    "changes": changes
+                }
+            ]
+        }
+        try:
+            return self._request(url, method="POST", data=payload)
+        except Exception:
+            # Si le fichier existe déjà, tenter en 'edit'
+            for c in changes:
+                c["changeType"] = "edit"
+            return self._request(url, method="POST", data=payload)
+
     def create_branch_with_fix(self, repo_id: str, base_branch: str, fix_branch: str, file_path: str, new_content: str, commit_message: str) -> Dict[str, Any]:
         base_commit = self.get_default_branch_commit(repo_id, base_branch)
         if not base_commit:

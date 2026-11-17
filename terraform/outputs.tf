@@ -14,13 +14,13 @@ output "databricks_workspace_url" {
 }
 
 output "databricks_notebook_path" {
-  description = "Chemin du Notebook d'ingestion déployé dans Databricks"
-  value       = databricks_notebook.sales_pipeline.path
+  description = "Chemin du Notebook d'ingestion déployé dans Databricks via CI/CD"
+  value       = "/Shared/01_ingest_sales_pipeline"
 }
 
 output "databricks_troubleshooter_notebook_path" {
-  description = "Chemin du Notebook Agent Troubleshooter déployé dans Databricks"
-  value       = databricks_notebook.troubleshooter_agent.path
+  description = "Chemin du Notebook Agent Troubleshooter déployé dans Databricks via CI/CD"
+  value       = "/Shared/02_troubleshooter_agent"
 }
 
 output "databricks_job_id" {

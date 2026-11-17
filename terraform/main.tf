@@ -75,19 +75,7 @@ resource "azurerm_cognitive_deployment" "ai_model" {
   }
 }
 
-# 7. Déploiement du Notebook PySpark d'ingestion dans le Workspace Databricks
-resource "databricks_notebook" "sales_pipeline" {
-  source = "${path.module}/../notebooks/01_ingest_sales_pipeline.py"
-  path   = "/Shared/01_ingest_sales_pipeline"
-}
-
-# 8. Déploiement du Notebook Agent Troubleshooter dans le Workspace Databricks
-resource "databricks_notebook" "troubleshooter_agent" {
-  source = "${path.module}/../notebooks/02_troubleshooter_agent.py"
-  path   = "/Shared/02_troubleshooter_agent"
-}
-
-# 9. Données dynamiques de calcul Databricks (Version Spark LTS & Node Type minimal)
+# 7. Données dynamiques de calcul Databricks (Version Spark LTS & Node Type minimal)
 data "databricks_spark_version" "latest" {
   long_term_support = true
 }
@@ -96,7 +84,7 @@ data "databricks_node_type" "smallest" {
   local_disk = true
 }
 
-# 10. Databricks Workflow automatisé avec tâche On-Failure
+# 8. Databricks Workflow automatisé avec tâche On-Failure
 resource "databricks_job" "troubleshooter_workflow" {
   name = "workflow-sales-pipeline-troubleshooter"
 
@@ -120,7 +108,7 @@ resource "databricks_job" "troubleshooter_workflow" {
     task_key        = "ingest_sales_pipeline"
     job_cluster_key = "troubleshooter_cluster"
     notebook_task {
-      notebook_path = databricks_notebook.sales_pipeline.path
+      notebook_path = "/Shared/01_ingest_sales_pipeline"
     }
   }
 
@@ -132,7 +120,7 @@ resource "databricks_job" "troubleshooter_workflow" {
     run_if          = "AT_LEAST_ONE_FAILED"
     job_cluster_key = "troubleshooter_cluster"
     notebook_task {
-      notebook_path = databricks_notebook.troubleshooter_agent.path
+      notebook_path = "/Shared/02_troubleshooter_agent"
       base_parameters = {
         "foundry_endpoint"  = azurerm_cognitive_account.ai_foundry.endpoint
         "foundry_api_key"   = azurerm_cognitive_account.ai_foundry.primary_access_key

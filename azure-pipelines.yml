@@ -6,6 +6,7 @@ trigger:
   paths:
     include:
       - notebooks/*
+      - scripts/deploy_to_databricks.py
 
 pool:
   vmImage: 'ubuntu-latest'
@@ -13,11 +14,11 @@ pool:
 variables:
   - name: DATABRICKS_HOST
     value: 'https://adb-7405615002700070.10.azuredatabricks.net'
-  # Le token DATABRICKS_TOKEN doit être configuré dans la Library Azure DevOps (Secret Variable)
+  # Le secret DATABRICKS_TOKEN peut être défini dans Azure DevOps > Pipelines > Library / Variables
 
 stages:
 - stage: ValidateAndTest
-  displayName: "Validation & Tests Unitaires PySpark"
+  displayName: "Validation & Tests Unitaires PySpark (CI)"
   jobs:
   - job: LintAndValidate
     displayName: "Linting & Syntaxe PySpark"
@@ -29,13 +30,14 @@ stages:
 
     - script: |
         python -m pip install --upgrade pip
-        pip install flake8
-        # Validation de la syntaxe des scripts PySpark
+        # Validation de la compilation des scripts PySpark et Agent
         python -m py_compile notebooks/01_ingest_sales_pipeline.py
-      displayName: 'Validation syntaxique du Notebook'
+        python -m py_compile notebooks/02_troubleshooter_agent.py
+        echo "✅ Tous les scripts PySpark et Agent sont syntaxiquement valides."
+      displayName: 'Validation syntaxique des Notebooks'
 
 - stage: DeployToDatabricks
-  displayName: "Déploiement CI/CD vers Azure Databricks"
+  displayName: "Déploiement Continu vers Azure Databricks (CD)"
   dependsOn: ValidateAndTest
   condition: succeeded()
   jobs:
@@ -48,8 +50,8 @@ stages:
       displayName: 'Activer Python 3.11'
 
     - script: |
-        pip install databricks-cli
-        # Synchronisation du dossier notebooks vers le Workspace Databricks
-        echo "Déploiement du pipeline PySpark vers Databricks..."
-        # databricks workspace import_dir notebooks /Shared/ -o
+        python scripts/deploy_to_databricks.py
       displayName: 'Databricks Workspace Sync'
+      env:
+        DATABRICKS_HOST: $(DATABRICKS_HOST)
+        DATABRICKS_TOKEN: $(DATABRICKS_TOKEN)
