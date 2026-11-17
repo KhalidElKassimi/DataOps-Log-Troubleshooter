@@ -75,63 +75,6 @@ resource "azurerm_cognitive_deployment" "ai_model" {
   }
 }
 
-# 7. Données dynamiques de calcul Databricks (Version Spark LTS & Node Type minimal)
-data "databricks_spark_version" "latest" {
-  long_term_support = true
-}
 
-data "databricks_node_type" "smallest" {
-  local_disk = true
-}
-
-# 8. Databricks Workflow automatisé avec tâche On-Failure
-resource "databricks_job" "troubleshooter_workflow" {
-  name = "workflow-sales-pipeline-troubleshooter"
-
-  job_cluster {
-    job_cluster_key = "troubleshooter_cluster"
-    new_cluster {
-      num_workers   = 0
-      spark_version = data.databricks_spark_version.latest.id
-      node_type_id  = data.databricks_node_type.smallest.id
-      spark_conf = {
-        "spark.master"                     = "local[*]"
-        "spark.databricks.cluster.profile" = "singleNode"
-      }
-      custom_tags = {
-        "ResourceClass" = "SingleNode"
-      }
-    }
-  }
-
-  task {
-    task_key        = "ingest_sales_pipeline"
-    job_cluster_key = "troubleshooter_cluster"
-    notebook_task {
-      notebook_path = "/Shared/01_ingest_sales_pipeline"
-    }
-  }
-
-  task {
-    task_key = "troubleshoot_on_failure"
-    depends_on {
-      task_key = "ingest_sales_pipeline"
-    }
-    run_if          = "AT_LEAST_ONE_FAILED"
-    job_cluster_key = "troubleshooter_cluster"
-    notebook_task {
-      notebook_path = "/Shared/02_troubleshooter_agent"
-      base_parameters = {
-        "foundry_endpoint"  = azurerm_cognitive_account.ai_foundry.endpoint
-        "foundry_api_key"   = azurerm_cognitive_account.ai_foundry.primary_access_key
-        "ai_model_name"     = azurerm_cognitive_deployment.ai_model.name
-        "pipeline_name"     = "01_ingest_sales_pipeline"
-        "azure_devops_org"  = "khalid-dataops"
-        "azure_devops_proj" = "khalid-dataops"
-        "azure_devops_pat"  = var.azure_devops_pat
-      }
-    }
-  }
-}
 
 

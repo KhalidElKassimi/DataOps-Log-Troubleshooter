@@ -23,15 +23,7 @@ output "databricks_troubleshooter_notebook_path" {
   value       = "/Shared/02_troubleshooter_agent"
 }
 
-output "databricks_job_id" {
-  description = "Identifiant du Databricks Workflow automatisé"
-  value       = databricks_job.troubleshooter_workflow.id
-}
 
-output "databricks_job_url" {
-  description = "URL directe du Job dans Databricks"
-  value       = "${azurerm_databricks_workspace.databricks.workspace_url}#job/${databricks_job.troubleshooter_workflow.id}"
-}
 
 
 
