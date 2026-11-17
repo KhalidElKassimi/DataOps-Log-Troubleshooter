@@ -17,14 +17,18 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: "Synchroniser le Repo Git vers Azure DevOps Repos"
-        run: |
-          git push "https://${{ secrets.AZURE_DEVOPS_PAT }}@dev.azure.com/khalid-dataops/khalid-dataops/_git/khalid-dataops" HEAD:main --force
-
       - name: "Set up Python 3.11"
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: "Synchroniser strictement les Notebooks et CI/CD vers Azure DevOps Repos"
+        env:
+          AZURE_DEVOPS_ORG: "khalid-dataops"
+          AZURE_DEVOPS_PROJECT: "khalid-dataops"
+          AZURE_DEVOPS_PAT: ${{ secrets.AZURE_DEVOPS_PAT }}
+        run: |
+          python scripts/sync_clean_to_azure_devops.py
 
       - name: "Run Azure DevOps Setup Script"
         env:

@@ -34,6 +34,7 @@ def get_or_create_job(host: str, headers: dict) -> int:
     except Exception as e:
         print(f"⚠️ Recherche du job : {e}")
 
+    node_type = os.getenv("DATABRICKS_NODE_TYPE", "Standard_D4s_v3")
     job_settings = {
         "name": "workflow-sales-pipeline-troubleshooter",
         "job_clusters": [
@@ -41,7 +42,7 @@ def get_or_create_job(host: str, headers: dict) -> int:
                 "job_cluster_key": "troubleshooter_cluster",
                 "new_cluster": {
                     "spark_version": "13.3.x-scala2.12",
-                    "node_type_id": "Standard_DS3_v2",
+                    "node_type_id": node_type,
                     "num_workers": 0,
                     "spark_conf": {
                         "spark.master": "local[*]",
