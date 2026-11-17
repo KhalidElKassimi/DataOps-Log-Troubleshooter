@@ -1,0 +1,122 @@
+import os
+import sys
+from pathlib import Path
+
+# Add project root to sys.path
+root_dir = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(root_dir))
+
+# Charger les variables depuis .env si présent
+env_file = root_dir / ".env"
+if env_file.exists():
+    with open(env_file, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip())
+
+from agent.devops_client import AzureDevOpsClient
+
+ORG = os.getenv("AZURE_DEVOPS_ORG", "khalid-dataops")
+PROJECT = os.getenv("AZURE_DEVOPS_PROJECT", "khalid-dataops")
+PAT = os.getenv("AZURE_DEVOPS_PAT", "")
+
+def main():
+    if not PAT:
+        print("❌ Erreur : La variable d'environnement AZURE_DEVOPS_PAT n'est pas définie.")
+        print("💡 En local : $env:AZURE_DEVOPS_PAT = 'votre_token'")
+        print("💡 Sur GitHub Actions : Ajoutez AZURE_DEVOPS_PAT dans Settings > Secrets > Actions")
+        sys.exit(1)
+    print("=" * 80)
+    print("🚀 CONFIGURATION D'AZURE DEVOPS POUR LE PROJET DATAOPS")
+    print(f"Organisation : {ORG}")
+    print(f"Projet       : {PROJECT}")
+    print("=" * 80)
+
+    client = AzureDevOpsClient(org=ORG, project=PROJECT, pat=PAT)
+
+    # 1. Vérification du projet
+    try:
+        project = client.get_project_details()
+        print(f"✅ Projet accessible : {project.get('name')} (ID: {project.get('id')})")
+    except Exception as e:
+        print(f"❌ Erreur d'accès au projet : {e}")
+        return
+
+    # 2. Vérification des Teams
+    teams = client.get_teams()
+    if not teams:
+        print("❌ Aucune équipe trouvée dans le projet.")
+        return
+    team = teams[0]
+    team_name = team["name"]
+    print(f"👥 Équipe par défaut : {team_name} (ID: {team['id']})")
+
+    # 3. Configuration des colonnes du Kanban Board
+    print("\n📋 Configuration du Board Agile...")
+    target_columns = ["Backlog", "In Dev", "In Progress", "In PR", "In QA", "Done"]
+    try:
+        # Essayer sur le board 'Stories' ou 'Issues' selon le process (Scrum / Agile / Basic)
+        for board_candidate in ["Stories", "Backlog items", "Issues", "Epics"]:
+            try:
+                current_cols = client.get_board_columns(team_name=team_name, board_id=board_candidate)
+                if current_cols:
+                    print(f"   Board trouvé : '{board_candidate}' avec {len(current_cols)} colonnes existantes :")
+                    for col in current_cols:
+                        print(f"   - {col.get('name')} ({col.get('columnType')})")
+
+                    # Création de la liste des 6 colonnes
+                    new_cols = []
+                    for i, col_name in enumerate(target_columns):
+                        col_type = "incoming" if i == 0 else ("outgoing" if i == len(target_columns) - 1 else "inProgress")
+                        new_cols.append({
+                            "name": col_name,
+                            "itemLimit": 0,
+                            "columnType": col_type
+                        })
+
+                    updated = client.set_board_columns(team_name=team_name, columns=new_cols, board_id=board_candidate)
+                    print(f"✅ Board '{board_candidate}' mis à jour avec les 6 colonnes :")
+                    print(f"   👉 {' -> '.join(target_columns)}")
+                    break
+            except Exception as be:
+                continue
+    except Exception as e:
+        print(f"⚠️ Note sur la mise à jour des colonnes : {e}")
+
+    # 4. Vérification et initialisation du Git Repository
+    print("\n📦 Configuration du Git Repository...")
+    repos = client.get_repositories()
+    if not repos:
+        print("❌ Aucun repository Git trouvé dans le projet.")
+        return
+
+    repo = repos[0]
+    repo_id = repo["id"]
+    repo_name = repo["name"]
+    print(f"📁 Repository sélectionné : {repo_name} (ID: {repo_id})")
+
+    # Vérification si la branche main a déjà un commit
+    main_commit = client.get_default_branch_commit(repo_id, "main")
+    if main_commit:
+        print(f"ℹ️ La branche 'main' existe déjà (Commit: {main_commit[:8]}).")
+    else:
+        print("⚡ Le repository est vide. Initialisation avec le premier commit sur 'main'...")
+        # Lire le contenu des fichiers locaux
+        pyspark_notebook = (root_dir / "notebooks" / "01_ingest_sales_pipeline.py").read_text(encoding="utf-8")
+        ci_cd_pipeline = (root_dir / "azure-pipelines.yml").read_text(encoding="utf-8")
+        readme = (root_dir / "README.md").read_text(encoding="utf-8")
+
+        files_to_push = {
+            "/notebooks/01_ingest_sales_pipeline.py": pyspark_notebook,
+            "/azure-pipelines.yml": ci_cd_pipeline,
+            "/README.md": readme
+        }
+        res = client.push_initial_commit(repo_id, files_to_push, "feat(dataops): Initialisation du repo avec le pipeline PySpark et CI/CD")
+        print("✅ Repository initialisé avec succès avec 'main' !")
+
+    print("\n🎉 INITIALISATION AZURE DEVOPS TERMINÉE !")
+
+if __name__ == "__main__":
+    main()

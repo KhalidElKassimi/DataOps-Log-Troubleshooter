@@ -3,15 +3,37 @@ output "resource_group_name" {
   value       = azurerm_resource_group.rg.name
 }
 
-output "data_factory_name" {
-  description = "Nom de l'instance Azure Data Factory"
-  value       = azurerm_data_factory.adf.name
+output "databricks_workspace_name" {
+  description = "Nom du Workspace Azure Databricks"
+  value       = azurerm_databricks_workspace.databricks.name
 }
 
-output "storage_account_name" {
-  description = "Nom du Storage Account ADLS Gen2"
-  value       = azurerm_storage_account.storage.name
+output "databricks_workspace_url" {
+  description = "URL d'accès à l'interface Azure Databricks"
+  value       = "https://${azurerm_databricks_workspace.databricks.workspace_url}"
 }
+
+output "databricks_notebook_path" {
+  description = "Chemin du Notebook d'ingestion déployé dans Databricks"
+  value       = databricks_notebook.sales_pipeline.path
+}
+
+output "databricks_troubleshooter_notebook_path" {
+  description = "Chemin du Notebook Agent Troubleshooter déployé dans Databricks"
+  value       = databricks_notebook.troubleshooter_agent.path
+}
+
+output "databricks_job_id" {
+  description = "Identifiant du Databricks Workflow automatisé"
+  value       = databricks_job.troubleshooter_workflow.id
+}
+
+output "databricks_job_url" {
+  description = "URL directe du Job dans Databricks"
+  value       = "${azurerm_databricks_workspace.databricks.workspace_url}#job/${databricks_job.troubleshooter_workflow.id}"
+}
+
+
 
 output "ai_foundry_endpoint" {
   description = "Point de terminaison (Endpoint) du socle Microsoft Azure AI Foundry"

@@ -27,6 +27,11 @@ terraform.rc
 *.exe
 *.zip
 
+# Exclude environment variables
+.env
+.env.local
+.env.*.local
+
 # Ignore documentation folder
 docs/
 

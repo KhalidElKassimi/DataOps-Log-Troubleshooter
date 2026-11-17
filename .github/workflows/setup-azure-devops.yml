@@ -1,0 +1,29 @@
+name: "Setup Azure DevOps Infrastructure"
+
+# Déclenchement STRICTEMENT manuel (aucun déclenchement automatique sur push)
+on:
+  workflow_dispatch:
+
+jobs:
+  configure-azure-devops:
+    name: "Configure Board Columns & Init Repos"
+    runs-on: ubuntu-latest
+    # Sécurité renforcée : SEUL le propriétaire du repository peut exécuter ce workflow
+    if: github.actor == github.repository_owner
+
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@v4
+
+      - name: "Set up Python 3.11"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: "Run Azure DevOps Setup Script"
+        env:
+          AZURE_DEVOPS_ORG: "khalid-dataops"
+          AZURE_DEVOPS_PROJECT: "khalid-dataops"
+          AZURE_DEVOPS_PAT: ${{ secrets.AZURE_DEVOPS_PAT }}
+        run: |
+          python scripts/setup_azure_devops.py

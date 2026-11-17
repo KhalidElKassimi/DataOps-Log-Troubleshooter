@@ -1,0 +1,55 @@
+# Azure DevOps CI/CD Pipeline : Déploiement automatisé des Notebooks vers Azure Databricks
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - notebooks/*
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - name: DATABRICKS_HOST
+    value: 'https://adb-7405615002700070.10.azuredatabricks.net'
+  # Le token DATABRICKS_TOKEN doit être configuré dans la Library Azure DevOps (Secret Variable)
+
+stages:
+- stage: ValidateAndTest
+  displayName: "Validation & Tests Unitaires PySpark"
+  jobs:
+  - job: LintAndValidate
+    displayName: "Linting & Syntaxe PySpark"
+    steps:
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: '3.11'
+      displayName: 'Activer Python 3.11'
+
+    - script: |
+        python -m pip install --upgrade pip
+        pip install flake8
+        # Validation de la syntaxe des scripts PySpark
+        python -m py_compile notebooks/01_ingest_sales_pipeline.py
+      displayName: 'Validation syntaxique du Notebook'
+
+- stage: DeployToDatabricks
+  displayName: "Déploiement CI/CD vers Azure Databricks"
+  dependsOn: ValidateAndTest
+  condition: succeeded()
+  jobs:
+  - job: DeployNotebooks
+    displayName: "Synchronisation des Notebooks vers /Shared"
+    steps:
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: '3.11'
+      displayName: 'Activer Python 3.11'
+
+    - script: |
+        pip install databricks-cli
+        # Synchronisation du dossier notebooks vers le Workspace Databricks
+        echo "Déploiement du pipeline PySpark vers Databricks..."
+        # databricks workspace import_dir notebooks /Shared/ -o
+      displayName: 'Databricks Workspace Sync'

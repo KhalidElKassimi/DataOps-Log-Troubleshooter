@@ -1,0 +1,23 @@
+[
+  {
+    "id": "ERR_001_DELTA_SCHEMA_MISMATCH",
+    "service": "Azure Databricks / Delta Lake",
+    "notebook": "01_ingest_sales_pipeline",
+    "timestamp": "2026-11-17T11:15:30Z",
+    "raw_log": "Py4JJavaError: An error occurred while calling o124.saveAsTable.\n: org.apache.spark.sql.AnalysisException: A schema mismatch detected when writing to the Delta table 'default.silver_sales'.\nTable schema:\nroot\n-- transaction_id: string (nullable = false)\n-- store_id: integer (nullable = false)\n-- unit_price: double (nullable = false)\n-- quantity: integer (nullable = false)\n\nData schema:\nroot\n-- transaction_id: string (nullable = false)\n-- store_id: integer (nullable = false)\n-- unit_price: string (nullable = false)\n-- quantity: integer (nullable = false)\n\nTo enable schema migration, please set:\n'spark.databricks.delta.schema.autoMerge.enabled' = 'true'\nor pass option('mergeSchema', 'true') to the write stream.\nTable file path: dbfs:/user/hive/warehouse/silver_sales\n\tat org.apache.spark.sql.delta.schema.DeltaInvariantViolationException$.apply(DeltaInvariantViolationException.scala:87)\n\tat org.apache.spark.sql.delta.schema.ImplicitMetadataOperation.$anonfun$updateMetadata$1(ImplicitMetadataOperation.scala:178)\n\tat org.apache.spark.sql.delta.commands.WriteIntoDelta.run(WriteIntoDelta.scala:114)"
+  },
+  {
+    "id": "ERR_002_SPARK_HEAP_OOM",
+    "service": "Azure Databricks / Apache Spark",
+    "notebook": "02_customer_feature_store",
+    "timestamp": "2026-11-17T11:18:02Z",
+    "raw_log": "26/11/17 11:18:02 ERROR TaskSetManager: Task 4.0 in stage 12.0 (TID 84) failed 4 times; aborting job\norg.apache.spark.SparkException: Job aborted due to stage failure: Task 4 in stage 12.0 failed 4 times, most recent failure: Lost task 4.3 in stage 12.0 (TID 91) (10.0.4.15 executor 2): java.lang.OutOfMemoryError: Java heap space\n\tat org.apache.spark.sql.catalyst.expressions.UnsafeRow.copy(UnsafeRow.java:54)\n\tat org.apache.spark.sql.execution.joins.HashedRelation$.apply(HashedRelation.scala:382)\n\tat org.apache.spark.sql.execution.joins.BroadcastHashJoinExec.prepareBroadcast(BroadcastHashJoinExec.scala:215)\n\tat org.apache.spark.sql.execution.joins.BroadcastHashJoinExec.doExecute(BroadcastHashJoinExec.scala:142)\nCaused by: java.lang.OutOfMemoryError: Java heap space"
+  },
+  {
+    "id": "ERR_003_ADLS_OAUTH_403",
+    "service": "Azure Databricks / ADLS Gen2",
+    "notebook": "03_bronze_ingestion_adls",
+    "timestamp": "2026-11-17T11:19:44Z",
+    "raw_log": "shaded.databricks.azure.storage.shaded.org.apache.hadoop.fs.azurebfs.contracts.exceptions.AbfsRestOperationException: Operation failed: 'This request is not authorized to perform this operation using this permission.', 403, HEAD, https://stdataopsdevdo3dh2.dfs.core.windows.net/bronze/sales_2026_11.parquet?upn=false&action=getStatus\n\tat shaded.databricks.azure.storage.shaded.org.apache.hadoop.fs.azurebfs.services.AbfsRestOperation.execute(AbfsRestOperation.java:237)\n\tat shaded.databricks.azure.storage.shaded.org.apache.hadoop.fs.azurebfs.services.AbfsClient.getPathStatus(AbfsClient.java:532)"
+  }
+]

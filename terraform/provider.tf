@@ -5,7 +5,11 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~> 3.100"
+      version = "~> 4.0"
+    }
+    databricks = {
+      source  = "databricks/databricks"
+      version = "~> 1.50"
     }
   }
 }
@@ -13,4 +17,9 @@ terraform {
 # Configuration du provider Azure Resource Manager
 provider "azurerm" {
   features {}
+}
+
+# Configuration du provider Databricks (connecté à notre workspace Azure)
+provider "databricks" {
+  azure_workspace_resource_id = azurerm_databricks_workspace.databricks.id
 }
