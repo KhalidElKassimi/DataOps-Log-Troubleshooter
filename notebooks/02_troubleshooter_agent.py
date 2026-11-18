@@ -437,8 +437,13 @@ def run_agent_diagnosis(error_log: str):
     print("🚀 DÉMARRAGE DU DIAGNOSTIC DATAOPS - AZURE AI FOUNDRY")
     print("=" * 80)
     
-    if not foundry_endpoint or not foundry_api_key or foundry_api_key == "DUMMY_KEY":
-        raise RuntimeError("Configurez FOUNDRY_ENDPOINT et FOUNDRY_API_KEY avant de lancer le diagnostic.")
+    if not foundry_endpoint:
+        raise RuntimeError("FOUNDRY_ENDPOINT manquant : configurez l'endpoint Azure OpenAI.")
+    if not foundry_api_key or foundry_api_key == "DUMMY_KEY":
+        raise RuntimeError(
+            "FOUNDRY_API_KEY manquante : configurez-la dans Azure DevOps Pipelines, "
+            "relancez le déploiement, puis exécutez le job Databricks."
+        )
         
     endpoint = foundry_endpoint.rstrip("/")
     url = f"{endpoint}/openai/deployments/{ai_model_name}/chat/completions?api-version=2024-08-01-preview"

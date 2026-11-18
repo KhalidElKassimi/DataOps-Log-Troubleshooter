@@ -92,6 +92,8 @@ Dans Azure DevOps Pipelines, configurez `DATABRICKS_TOKEN`, `FOUNDRY_API_KEY`, `
 
 Le workflow GitHub publie [`pipelines/azure-pipelines.yml`](./pipelines/azure-pipelines.yml), puis configure le pipeline Azure DevOps sur ce chemin. Si le pipeline existe déjà dans le même dépôt, le workflow met à jour son chemin sans le recréer. Une fois la migration vérifiée, vous pouvez retirer l'ancien YAML à la racine d'Azure Repos.
 
+Si le notebook signale `FOUNDRY_API_KEY` manquante, ajoutez une clé valide du compte Azure OpenAI `aifs-dataops-troubleshooter-dev` dans **Azure DevOps → Pipelines → pipeline Databricks → Modifier → Variables** et marquez-la comme secrète. Le workflow GitHub n'enregistre pas cette clé. Relancez ensuite le pipeline Azure DevOps pour mettre à jour le job, puis testez depuis **Databricks → Workflows** : une exécution directe du notebook ne reçoit pas les paramètres du job.
+
 ### 2. Déclenchement du Workflow sur Azure Databricks
 1. Ouvrez l'interface Databricks via l'URL générée en output :  
    `https://<databricks_workspace_url>#job/<databricks_job_id>`
