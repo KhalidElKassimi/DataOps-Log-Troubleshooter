@@ -94,6 +94,8 @@ Le workflow GitHub publie [`pipelines/azure-pipelines.yml`](./pipelines/azure-pi
 
 Si le notebook signale `FOUNDRY_API_KEY` manquante, ajoutez une clé valide du compte Azure OpenAI `aifs-dataops-troubleshooter-dev` dans **Azure DevOps → Pipelines → pipeline Databricks → Modifier → Variables** et marquez-la comme secrète. Le workflow GitHub n'enregistre pas cette clé. Relancez ensuite le pipeline Azure DevOps pour mettre à jour le job, puis testez depuis **Databricks → Workflows** : une exécution directe du notebook ne reçoit pas les paramètres du job.
 
+Si la création du ticket renvoie une réponse non JSON, ou un HTTP `401`/`403`, vérifiez `AZURE_DEVOPS_PAT` au même endroit. Le secret GitHub du même nom sert à la synchronisation et n'est pas copié dans Azure DevOps Pipelines. Utilisez un PAT valide pour l'organisation cible, avec **Work Items (Read & write)** et **Code (Read & write)** pour la PR. Relancez le pipeline Azure DevOps après toute modification de la variable.
+
 ### 2. Déclenchement du Workflow sur Azure Databricks
 1. Ouvrez l'interface Databricks via l'URL générée en output :  
    `https://<databricks_workspace_url>#job/<databricks_job_id>`

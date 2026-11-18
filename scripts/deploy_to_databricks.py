@@ -118,6 +118,9 @@ def deploy():
     foundry_key = os.getenv("FOUNDRY_API_KEY", "").strip()
     if not foundry_key or foundry_key.startswith("$(") or foundry_key == "DUMMY_KEY":
         sys.exit("FOUNDRY_API_KEY manquante ou non configurée : ajoutez-la comme variable secrète du pipeline Azure DevOps avant de redéployer.")
+    ado_pat = os.getenv("AZURE_DEVOPS_PAT", "").strip()
+    if not ado_pat or ado_pat.startswith("$("):
+        sys.exit("AZURE_DEVOPS_PAT manquant ou non configuré : ajoutez-le comme variable secrète du pipeline Azure DevOps avant de redéployer.")
 
     headers = {
         "Authorization": f"Bearer {token}",

@@ -115,8 +115,19 @@ class DatabricksDevOpsHelper:
         body = json.dumps(data).encode("utf-8") if data is not None else None
         req = urllib.request.Request(url, data=body, headers=req_headers, method=method)
         with urllib.request.urlopen(req, timeout=30) as resp:
-            content = resp.read().decode("utf-8")
-            return json.loads(content) if content else {}
+            content = resp.read()
+            if not content:
+                return {}
+            try:
+                result = json.loads(content)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                raise RuntimeError(
+                    f"Azure DevOps a renvoyé une réponse non JSON (HTTP {resp.status}). "
+                    "Vérifiez la validité du PAT et son accès au projet."
+                ) from None
+            if not isinstance(result, dict):
+                raise RuntimeError("Format de réponse Azure DevOps inattendu : objet JSON attendu.")
+            return result
 
     def create_work_item(self, title: str, description: str, repro_steps: str, column: str = "Backlog", assigned_to: str = "elkassimi.khalid07@outlook.com") -> Dict[str, Any]:
         # Supporte à la fois le template 'Basic' (type Issue) et 'Scrum/Agile' (type Bug)
@@ -131,8 +142,13 @@ class DatabricksDevOpsHelper:
                 ]
                 if assigned_to:
                     patch.append({"op": "add", "path": "/fields/System.AssignedTo", "value": assigned_to})
-                return self.request(url, method="POST", data=patch, headers={"Content-Type": "application/json-patch+json"})
-            except Exception as e:
+                item = self.request(url, method="POST", data=patch, headers={"Content-Type": "application/json-patch+json"})
+                if not item.get("id"):
+                    raise RuntimeError("Azure DevOps n'a pas confirmé la création du ticket : ID absent.")
+                return item
+            except urllib.error.HTTPError as e:
+                if e.code not in (400, 404):
+                    raise
                 last_err = e
                 continue
         raise last_err or Exception("Impossible de créer le Work Item.")
@@ -444,6 +460,11 @@ def run_agent_diagnosis(error_log: str):
             "FOUNDRY_API_KEY manquante : configurez-la dans Azure DevOps Pipelines, "
             "relancez le déploiement, puis exécutez le job Databricks."
         )
+    if not ado_pat:
+        raise RuntimeError(
+            "AZURE_DEVOPS_PAT manquant : configurez la variable secrète du pipeline Azure DevOps, "
+            "puis redéployez le job Databricks."
+        )
         
     endpoint = foundry_endpoint.rstrip("/")
     url = f"{endpoint}/openai/deployments/{ai_model_name}/chat/completions?api-version=2024-08-01-preview"
@@ -471,6 +492,7 @@ def run_agent_diagnosis(error_log: str):
             method="POST"
         )
         
+        failed_work_item = None
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
@@ -490,6 +512,9 @@ def run_agent_diagnosis(error_log: str):
                     f_name = func.get("name")
                     f_args = json.loads(func.get("arguments", "{}"))
                     result = execute_tool(f_name, f_args)
+                    if f_name == "create_azure_devops_work_item" and result.get("status") != "created":
+                        failed_work_item = result.get("message") or "Création du ticket non confirmée."
+                        break
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc_id,
@@ -499,6 +524,8 @@ def run_agent_diagnosis(error_log: str):
         except Exception as e:
             print(f"❌ Erreur lors de l'appel à Azure AI Foundry : {e}")
             break
+        if failed_work_item is not None:
+            raise RuntimeError(f"Remédiation arrêtée après l'échec du ticket Azure DevOps : {failed_work_item}")
 
 # COMMAND ----------
 # MAGIC %md
