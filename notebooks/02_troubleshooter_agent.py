@@ -328,7 +328,6 @@ def execute_tool(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
             LAST_WORK_ITEM_ID = wi.get("id")
             LAST_WORK_ITEM_URL = f"https://dev.azure.com/{ado_org}/{ado_proj}/_workitems/edit/{LAST_WORK_ITEM_ID}"
             print(f"✅ Ticket créé avec succès : ID #{LAST_WORK_ITEM_ID} dans [Backlog]")
-            print(f"📧 Notification email déclenchée vers : elkassimi.khalid07@outlook.com")
             print(f"🔗 URL : {LAST_WORK_ITEM_URL}")
             return {"status": "created", "work_item_id": LAST_WORK_ITEM_ID, "column": "Backlog", "url": LAST_WORK_ITEM_URL}
         except Exception as e:
@@ -395,7 +394,10 @@ def execute_tool(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
         subject = args.get("subject") or f"[DataOps] Incident sur {pipeline_name}"
 
         if not outlook_logic_app_url:
-            message = "L'URL de la Logic App Outlook n'est pas configurée."
+            message = (
+                "Aucun mail envoyé : configurez OUTLOOK_LOGIC_APP_URL comme variable secrète "
+                "dans Azure DevOps Pipelines, puis redéployez le job Databricks."
+            )
             print(f"⚠️ {message}")
             return {"status": "error", "message": message}
 
