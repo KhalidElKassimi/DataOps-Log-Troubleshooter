@@ -105,4 +105,5 @@ Si la création du ticket renvoie une réponse non JSON, ou un HTTP `401`/`403`,
 3. **Observation en direct** :
    * La tâche `ingest_sales_pipeline` s'exécute et échoue suite à la violation de schéma Delta (`AnalysisException`).
    * La condition `AT_LEAST_ONE_FAILED` active instantanément la tâche `troubleshoot_on_failure`.
-   * Le notebook `02_troubleshooter_agent` s'exécute sur le cluster, interroge **Azure AI Foundry** (`gpt-4.1-mini`), diagnostique la cause racine et déclenche les outils Azure DevOps et Outlook.
+   * Le notebook `02_troubleshooter_agent` lit l'erreur du run de la tâche `ingest_sales_pipeline` via l'API Jobs avec l'identité d'exécution Databricks. Cette identité doit pouvoir consulter le job. Si l'erreur est indisponible, le diagnostic s'arrête sans créer de ticket, de PR ou d'alerte fondés sur un exemple.
+   * Azure OpenAI (`gpt-4.1-mini`) analyse cette erreur et peut déclencher le ticket et l'alerte Outlook. La PR est facultative : elle applique uniquement un bloc exact et unique du notebook d'ingestion, sans remplacer le reste. Testez depuis le workflow redéployé, car l'identifiant de la tâche en échec est injecté par Databricks.

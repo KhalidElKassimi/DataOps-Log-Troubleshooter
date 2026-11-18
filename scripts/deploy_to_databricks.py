@@ -61,10 +61,12 @@ def get_or_create_job(host: str, headers: dict) -> int:
                 "depends_on": [{"task_key": "ingest_sales_pipeline"}],
                 "run_if": "AT_LEAST_ONE_FAILED",
                 "job_cluster_key": "troubleshooter_cluster",
+                "libraries": [{"pypi": {"package": "databricks-sdk==0.20.0"}}],
                 "notebook_task": {
                     "notebook_path": "/Shared/02_troubleshooter_agent",
                     "base_parameters": {
                         "pipeline_name": "01_ingest_sales_pipeline",
+                        "failed_task_run_id": "{{tasks.ingest_sales_pipeline.run_id}}",
                         "foundry_endpoint": os.getenv("FOUNDRY_ENDPOINT", "https://aifs-dataops-troubleshooter-dev-do3dh2.openai.azure.com/"),
                         "foundry_api_key": os.getenv("FOUNDRY_API_KEY", ""),
                         "ai_model_name": os.getenv("AI_MODEL_NAME", "gpt-4.1-mini"),
