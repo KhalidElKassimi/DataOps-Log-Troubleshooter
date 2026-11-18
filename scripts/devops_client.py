@@ -217,7 +217,7 @@ class AzureDevOpsClient:
             payload["workItemRefs"] = [{"id": str(wid)} for wid in work_item_ids]
         return self._request(url, method="POST", data=payload)
 
-    def create_pipeline(self, repo_id: str, repo_name: str, yaml_path: str = "/azure-pipelines.yml", pipeline_name: str = "CI-CD-Databricks-Pipeline") -> Dict[str, Any]:
+    def create_pipeline(self, repo_id: str, repo_name: str, yaml_path: str, pipeline_name: str = "CI-CD-Databricks-Pipeline") -> Dict[str, Any]:
         url = f"{self.base_url}/_apis/pipelines?api-version=7.1"
         payload = {
             "name": pipeline_name,
@@ -233,15 +233,40 @@ class AzureDevOpsClient:
         }
         return self._request(url, method="POST", data=payload)
 
-    def set_pipeline_secret_variable(self, var_name: str, var_value: str) -> bool:
-        url_defs = f"{self.base_url}/_apis/build/definitions?api-version=7.1"
-        res = self._request(url_defs)
-        defs = res.get("value", [])
-        if not defs:
-            return False
+    def ensure_yaml_pipeline(self, repo_id: str, repo_name: str, yaml_path: str, pipeline_name: str) -> int:
+        query = urllib.parse.urlencode({
+            "api-version": "7.1",
+            "name": pipeline_name,
+            "repositoryId": repo_id,
+            "repositoryType": "TfsGit",
+        })
+        definitions = self._request(f"{self.base_url}/_apis/build/definitions?{query}")
+        matches = [definition for definition in definitions.get("value", []) if definition.get("name") == pipeline_name]
+        if not matches:
+            return self.create_pipeline(repo_id, repo_name, yaml_path, pipeline_name)["id"]
+        if len(matches) != 1:
+            raise RuntimeError(f"Plusieurs pipelines portent le nom '{pipeline_name}' dans ce dépôt.")
 
-        def_id = defs[0]["id"]
-        url_def = f"{self.base_url}/_apis/build/definitions/{def_id}?api-version=7.1"
+        def_id = matches[0]["id"]
+        url_def = self._build_definition_url(def_id)
+        definition = self._request(url_def)
+        if definition.get("repository", {}).get("id") != repo_id:
+            raise RuntimeError(f"Le pipeline #{def_id} ne correspond pas au dépôt attendu.")
+
+        process = definition.get("process", {})
+        current_path = process.get("yamlFilename")
+        if not isinstance(current_path, str) or not current_path:
+            raise RuntimeError(f"Le pipeline #{def_id} n'a pas de définition YAML.")
+        if current_path.lstrip("/") != yaml_path.lstrip("/"):
+            process["yamlFilename"] = yaml_path
+            self._request(url_def, method="PUT", data=definition)
+        return def_id
+
+    def _build_definition_url(self, def_id: int) -> str:
+        return f"{self.base_url}/_apis/build/definitions/{def_id}?api-version=7.1"
+
+    def set_pipeline_secret_variable(self, def_id: int, var_name: str, var_value: str) -> None:
+        url_def = self._build_definition_url(def_id)
         definition = self._request(url_def)
 
         if "variables" not in definition:
@@ -253,16 +278,8 @@ class AzureDevOpsClient:
         }
 
         self._request(url_def, method="PUT", data=definition)
-        return True
 
-    def queue_build(self) -> Dict[str, Any]:
-        url_defs = f"{self.base_url}/_apis/build/definitions?api-version=7.1"
-        res = self._request(url_defs)
-        defs = res.get("value", [])
-        if not defs:
-            raise Exception("Aucune définition de pipeline trouvée.")
-        def_id = defs[0]["id"]
-
+    def queue_build(self, def_id: int) -> Dict[str, Any]:
         url_queue = f"{self.base_url}/_apis/build/builds?api-version=7.1"
         payload = {"definition": {"id": def_id}}
         return self._request(url_queue, method="POST", data=payload)

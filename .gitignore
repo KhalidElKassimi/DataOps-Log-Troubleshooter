@@ -27,6 +27,10 @@ terraform.rc
 *.exe
 *.zip
 
+# Exclude generated Python bytecode
+__pycache__/
+*.pyc
+
 # Exclude environment variables
 .env
 .env.local

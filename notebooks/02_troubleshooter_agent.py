@@ -4,12 +4,13 @@
 # MAGIC # 🤖 DataOps Intelligent Troubleshooter Agent
 # MAGIC Ce notebook est automatiquement déclenché par Databricks Workflows dès qu'un pipeline échoue.
 # MAGIC Il s'interface avec **Microsoft Azure AI Foundry** (`gpt-4.1-mini`) et déclenche des actions de remédiation réelles :
-# MAGIC - 📢 Alerte dans Microsoft Teams
+# MAGIC - 📧 Alerte par e-mail via Outlook
 # MAGIC - 📋 Création d'un Bug Work Item dans le Board Azure DevOps (colonne Backlog)
 # MAGIC - 🔀 Création de la branche Git et ouverture de la Pull Request (PR) avec déplacement du ticket en colonne `In PR` (Human-in-the-Loop)
 
 # COMMAND ----------
 import base64
+from html import escape
 import json
 import os
 import urllib.request
@@ -22,36 +23,40 @@ from typing import Dict, Any, List, Optional
 # MAGIC Récupération des clés injectées par le Job Databricks ou l'environnement.
 
 # COMMAND ----------
+FALLBACK_FOUNDRY_ENDPOINT = "https://aifs-dataops-troubleshooter-dev-do3dh2.openai.azure.com/"
+
+def get_param(widget_name: str, env_name: str, default_val: str) -> str:
+    try:
+        val = dbutils.widgets.get(widget_name)
+        if val and val.strip() and not val.strip().startswith("$("):
+            return val.strip()
+    except Exception:
+        pass
+    env_val = os.getenv(env_name)
+    if env_val and env_val.strip() and not env_val.strip().startswith("$("):
+        return env_val.strip()
+    return default_val
+
 try:
-    dbutils.widgets.text("foundry_endpoint", "")
+    dbutils.widgets.text("foundry_endpoint", FALLBACK_FOUNDRY_ENDPOINT)
     dbutils.widgets.text("foundry_api_key", "")
     dbutils.widgets.text("ai_model_name", "gpt-4.1-mini")
     dbutils.widgets.text("pipeline_name", "01_ingest_sales_pipeline")
     dbutils.widgets.text("azure_devops_org", "khalid-dataops")
     dbutils.widgets.text("azure_devops_proj", "khalid-dataops")
     dbutils.widgets.text("azure_devops_pat", "")
-    dbutils.widgets.text("teams_webhook_url", "")
     dbutils.widgets.text("outlook_logic_app_url", "")
-    
-    foundry_endpoint = dbutils.widgets.get("foundry_endpoint") or os.getenv("FOUNDRY_ENDPOINT", "")
-    foundry_api_key = dbutils.widgets.get("foundry_api_key") or os.getenv("FOUNDRY_API_KEY", "")
-    ai_model_name = dbutils.widgets.get("ai_model_name") or "gpt-4.1-mini"
-    pipeline_name = dbutils.widgets.get("pipeline_name") or "01_ingest_sales_pipeline"
-    ado_org = dbutils.widgets.get("azure_devops_org") or os.getenv("AZURE_DEVOPS_ORG", "khalid-dataops")
-    ado_proj = dbutils.widgets.get("azure_devops_proj") or os.getenv("AZURE_DEVOPS_PROJECT", "khalid-dataops")
-    ado_pat = dbutils.widgets.get("azure_devops_pat") or os.getenv("AZURE_DEVOPS_PAT", "")
-    teams_webhook_url = dbutils.widgets.get("teams_webhook_url") or os.getenv("TEAMS_WEBHOOK_URL", "")
-    outlook_logic_app_url = dbutils.widgets.get("outlook_logic_app_url") or os.getenv("OUTLOOK_LOGIC_APP_URL", "")
 except Exception:
-    foundry_endpoint = os.getenv("FOUNDRY_ENDPOINT", "")
-    foundry_api_key = os.getenv("FOUNDRY_API_KEY", "")
-    ai_model_name = "gpt-4.1-mini"
-    pipeline_name = "01_ingest_sales_pipeline"
-    ado_org = os.getenv("AZURE_DEVOPS_ORG", "khalid-dataops")
-    ado_proj = os.getenv("AZURE_DEVOPS_PROJECT", "khalid-dataops")
-    ado_pat = os.getenv("AZURE_DEVOPS_PAT", "")
-    teams_webhook_url = os.getenv("TEAMS_WEBHOOK_URL", "")
-    outlook_logic_app_url = os.getenv("OUTLOOK_LOGIC_APP_URL", "")
+    pass
+
+foundry_endpoint = get_param("foundry_endpoint", "FOUNDRY_ENDPOINT", FALLBACK_FOUNDRY_ENDPOINT)
+foundry_api_key = get_param("foundry_api_key", "FOUNDRY_API_KEY", "")
+ai_model_name = get_param("ai_model_name", "AI_MODEL_NAME", "gpt-4.1-mini")
+pipeline_name = get_param("pipeline_name", "PIPELINE_NAME", "01_ingest_sales_pipeline")
+ado_org = get_param("azure_devops_org", "AZURE_DEVOPS_ORG", "khalid-dataops")
+ado_proj = get_param("azure_devops_proj", "AZURE_DEVOPS_PROJECT", "khalid-dataops")
+ado_pat = get_param("azure_devops_pat", "AZURE_DEVOPS_PAT", "")
+outlook_logic_app_url = get_param("outlook_logic_app_url", "OUTLOOK_LOGIC_APP_URL", "")
 
 LAST_WORK_ITEM_ID: Optional[int] = None
 LAST_WORK_ITEM_URL: Optional[str] = None
@@ -239,24 +244,6 @@ AGENT_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "notify_teams",
-            "description": "Envoie une carte adaptative d'alerte critique dans le canal Microsoft Teams DataOps.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "pipeline_name": {"type": "string"},
-                    "error_summary": {"type": "string"},
-                    "root_cause": {"type": "string"},
-                    "severity": {"type": "string", "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW"]},
-                    "recommended_action": {"type": "string"}
-                },
-                "required": ["pipeline_name", "error_summary", "root_cause", "severity", "recommended_action"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "create_azure_devops_work_item",
             "description": "Crée un Bug Work Item sur le Board Azure DevOps du projet en colonne Backlog.",
             "parameters": {
@@ -297,12 +284,11 @@ AGENT_TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "recipient_email": {"type": "string", "description": "Adresse email de destination (elkassimi.khalid07@outlook.com)"},
                     "subject": {"type": "string", "description": "Sujet officiel du mail d'astreinte"},
                     "root_cause": {"type": "string", "description": "Explication claire et détaillée de la cause racine"},
                     "recommended_action": {"type": "string", "description": "Action recommandée pour réparer"}
                 },
-                "required": ["recipient_email", "subject", "root_cause", "recommended_action"]
+                "required": ["subject", "root_cause", "recommended_action"]
             }
         }
     }
@@ -312,64 +298,7 @@ def execute_tool(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
     global LAST_WORK_ITEM_ID, LAST_WORK_ITEM_URL, LAST_PR_ID, LAST_PR_URL
     print(f"\n⚡ [Databricks Action] Exécution de l'outil : '{name}'")
     
-    if name == "notify_teams":
-        wi_url = LAST_WORK_ITEM_URL or (f"https://dev.azure.com/{ado_org}/{ado_proj}/_workitems/edit/{LAST_WORK_ITEM_ID}" if LAST_WORK_ITEM_ID else f"https://dev.azure.com/{ado_org}/{ado_proj}/_workitems")
-        pr_url = LAST_PR_URL or f"https://dev.azure.com/{ado_org}/{ado_proj}/_git/{ado_proj}/pullrequests"
-        
-        print(f"📢 [Microsoft Teams] Formatage & Envoi de l'alerte d'astreinte DataOps :")
-        print(f"   🚨 Sévérité     : [{args.get('severity', 'HIGH')}]")
-        print(f"   🎯 Pipeline     : {args.get('pipeline_name', pipeline_name)}")
-        print(f"   🔍 Résumé       : {args.get('error_summary')}")
-        print(f"   💥 Cause racine : {args.get('root_cause')}")
-        print(f"   🛠️ Recommandé  : {args.get('recommended_action')}")
-        print(f"   📋 Work Item    : {wi_url}")
-        print(f"   🔀 Pull Request : {pr_url}")
-        
-        # Adaptive Card Microsoft Teams
-        adaptive_card = {
-            "type": "message",
-            "attachments": [
-                {
-                    "contentType": "application/vnd.microsoft.card.adaptive",
-                    "content": {
-                        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-                        "type": "AdaptiveCard",
-                        "version": "1.4",
-                        "body": [
-                            {"type": "TextBlock", "text": f"🚨 Alerte DataOps : Incident résolu par l'IA sur {pipeline_name}", "weight": "Bolder", "size": "Medium", "color": "Attention"},
-                            {"type": "FactSet", "facts": [
-                                {"title": "Sévérité :", "value": args.get("severity", "HIGH")},
-                                {"title": "Cause racine :", "value": args.get("root_cause", "")},
-                                {"title": "Statut IA :", "value": "Correctif PySpark généré et PR ouverte"}
-                            ]}
-                        ],
-                        "actions": [
-                            {"type": "Action.OpenUrl", "title": "📋 Voir le Bug (Azure DevOps)", "url": wi_url},
-                            {"type": "Action.OpenUrl", "title": "🔀 Examiner & Valider la PR", "url": pr_url}
-                        ]
-                    }
-                }
-            ]
-        }
-        
-        if teams_webhook_url:
-            try:
-                t_req = urllib.request.Request(
-                    teams_webhook_url,
-                    data=json.dumps(adaptive_card).encode("utf-8"),
-                    headers={"Content-Type": "application/json"},
-                    method="POST"
-                )
-                with urllib.request.urlopen(t_req, timeout=10) as t_resp:
-                    print(f"✅ Alerte transmise en direct dans Microsoft Teams via Webhook (HTTP {t_resp.status}) !")
-            except Exception as te:
-                print(f"⚠️ Envoi webhook Teams : {te}")
-        else:
-            print("ℹ️ Note : TEAMS_WEBHOOK_URL non configuré. Alerte et carte adaptative générées dans la console.")
-            
-        return {"status": "sent", "channel": "DataOps-Alerts", "work_item_url": wi_url, "pr_url": pr_url}
-        
-    elif name == "create_azure_devops_work_item":
+    if name == "create_azure_devops_work_item":
         print(f"📋 [Azure DevOps Board] Création Bug Work Item...")
         try:
             helper = DatabricksDevOpsHelper(org=ado_org, project=ado_proj, pat=ado_pat)
@@ -446,31 +375,47 @@ def execute_tool(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
     elif name == "send_outlook_email":
         wi_url = LAST_WORK_ITEM_URL or (f"https://dev.azure.com/{ado_org}/{ado_proj}/_workitems/edit/{LAST_WORK_ITEM_ID}" if LAST_WORK_ITEM_ID else f"https://dev.azure.com/{ado_org}/{ado_proj}/_workitems")
         pr_url = LAST_PR_URL or f"https://dev.azure.com/{ado_org}/{ado_proj}/_git/{ado_proj}/pullrequests"
-        recipient = args.get("recipient_email", "elkassimi.khalid07@outlook.com")
-        subject = args.get("subject", f"🚨 [DATAOPS CRITICAL] Incident Pipeline {pipeline_name} résolu par Azure AI Foundry")
-        
-        print(f"\n📧 [Microsoft Outlook Connector] Expédition de l'email officiel :")
-        print(f"   👤 Destinataire : {recipient}")
-        print(f"   📋 Sujet        : {subject}")
-        print(f"   🔍 Cause racine : {args.get('root_cause')}")
-        print(f"   🛠️ Recommandé  : {args.get('recommended_action')}")
-        print(f"   📋 Work Item    : {wi_url}")
-        print(f"   🔀 Pull Request : {pr_url}")
-        
-        logic_app_url = outlook_logic_app_url or os.getenv("OUTLOOK_LOGIC_APP_URL", "")
-        if logic_app_url:
-            try:
-                mail_body = f"Bonjour Khalid,<br/><br/>Un incident critique sur le pipeline <b>{pipeline_name}</b> a été résolu par Azure AI Foundry.<br/><br/><b>Cause racine :</b><br/>{args.get('root_cause')}<br/><br/><b>Correctif appliqué :</b><br/>{args.get('recommended_action')}<br/><br/><b>Actions requises :</b><br/>- <a href='{wi_url}'>Consulter le Bug Azure DevOps</a><br/>- <a href='{pr_url}'>Valider la Pull Request</a>"
-                mail_payload = {"to": recipient, "subject": subject, "body": mail_body}
-                m_req = urllib.request.Request(logic_app_url, data=json.dumps(mail_payload).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
-                with urllib.request.urlopen(m_req, timeout=15) as m_resp:
-                    print(f"✅ Email officiel expédié vers {recipient} via le Connecteur Azure Outlook (HTTP {m_resp.status}) !")
-            except Exception as me:
-                print(f"ℹ️ Envoi connecteur Outlook : {me}")
+        recipient = "elkassimi.khalid07@outlook.com"
+        subject = args.get("subject") or f"[DataOps] Incident sur {pipeline_name}"
+
+        if not outlook_logic_app_url:
+            message = "L'URL de la Logic App Outlook n'est pas configurée."
+            print(f"⚠️ {message}")
+            return {"status": "error", "message": message}
+
+        mail_body = (
+            f"Incident détecté sur le pipeline <b>{escape(pipeline_name)}</b>.<br/><br/>"
+            f"<b>Cause racine :</b><br/>{escape(str(args.get('root_cause') or 'Non renseignée'))}<br/><br/>"
+            f"<b>Correctif proposé :</b><br/>{escape(str(args.get('recommended_action') or 'Non renseigné'))}"
+        )
+        if LAST_WORK_ITEM_URL or LAST_WORK_ITEM_ID:
+            mail_body += f"<br/><br/><a href='{escape(wi_url)}'>Consulter le ticket Azure DevOps</a>"
+        if LAST_PR_URL:
+            mail_body += f"<br/><br/><a href='{escape(pr_url)}'>Examiner la Pull Request</a>"
+        mail_payload = {"to": recipient, "subject": subject, "body": mail_body}
+
+        try:
+            m_req = urllib.request.Request(
+                outlook_logic_app_url,
+                data=json.dumps(mail_payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(m_req, timeout=60) as m_resp:
+                status_code = m_resp.status
+                result = json.load(m_resp) if status_code == 200 else None
+        except urllib.error.HTTPError as error:
+            message = f"La Logic App Outlook a répondu HTTP {error.code}."
+        except (urllib.error.URLError, TimeoutError, ValueError):
+            message = "Impossible d'obtenir une confirmation de la Logic App Outlook."
         else:
-            print(f"✅ Email officiel formaté pour {recipient}.")
-            
-        return {"status": "sent", "recipient": recipient, "subject": subject, "work_item_url": wi_url, "pr_url": pr_url}
+            if status_code == 200 and isinstance(result, dict) and result.get("status") == "success":
+                print(f"✅ Envoi confirmé par le connecteur Outlook pour {recipient}.")
+                return {"status": "sent", "recipient": recipient, "subject": subject, "work_item_url": wi_url, "pr_url": pr_url}
+            message = f"La Logic App Outlook n'a pas confirmé l'envoi (HTTP {status_code})."
+
+        print(f"⚠️ {message}")
+        return {"status": "error", "message": message}
         
     return {"status": "error", "message": f"Outil non supporté : {name}"}
 
@@ -484,7 +429,6 @@ Ton rôle est d'analyser les traces d'erreurs d'ingestion et d'exécuter OBLIGAT
 1. create_azure_devops_work_item : Crée le ticket de Bug dans la colonne Backlog d'Azure DevOps Boards.
 2. create_azure_devops_pull_request : Crée la branche Git 'fix/schema-mismatch-unit-price', applique le code PySpark corrigé (cast strict de 'unit_price' vers double) dans /notebooks/01_ingest_sales_pipeline.py, et ouvre la PR liée au Bug.
 3. send_outlook_email : Envoie l'email officiel Microsoft Outlook à l'ingénieur d'astreinte (elkassimi.khalid07@outlook.com) contenant le diagnostic complet, la cause racine, et les liens directs vers le Bug et la PR créés.
-4. notify_teams : Formate et diffuse l'alerte d'astreinte.
 
 Tu DOIS impérativement enchaîner ces outils jusqu'à ce que tous soient exécutés."""
 
@@ -494,15 +438,14 @@ def run_agent_diagnosis(error_log: str):
     print("=" * 80)
     
     if not foundry_endpoint or not foundry_api_key or foundry_api_key == "DUMMY_KEY":
-        print("⚠️ Mode simulation locale : exécution des outils.")
-        return
+        raise RuntimeError("Configurez FOUNDRY_ENDPOINT et FOUNDRY_API_KEY avant de lancer le diagnostic.")
         
     endpoint = foundry_endpoint.rstrip("/")
     url = f"{endpoint}/openai/deployments/{ai_model_name}/chat/completions?api-version=2024-08-01-preview"
     
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": f"Pipeline en échec : {pipeline_name}\n\nTrace d'erreur Databricks :\n{error_log}\n\nExécute les 3 actions maintenant : 1. create_azure_devops_work_item, 2. create_azure_devops_pull_request, 3. notify_teams."}
+        {"role": "user", "content": f"Pipeline en échec : {pipeline_name}\n\nTrace d'erreur Databricks :\n{error_log}\n\nExécute impérativement les 3 actions suivantes dans l'ordre : 1. create_azure_devops_work_item, 2. create_azure_devops_pull_request, 3. send_outlook_email."}
     ]
     
     for turn in range(5):

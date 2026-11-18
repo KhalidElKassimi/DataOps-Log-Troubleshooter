@@ -6,26 +6,16 @@ from pathlib import Path
 root_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(root_dir))
 
-# Charger les variables depuis .env si présent
-env_file = root_dir / ".env"
-if env_file.exists():
-    with open(env_file, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, v = line.split("=", 1)
-                os.environ.setdefault(k.strip(), v.strip())
-
-from agent.devops_client import AzureDevOpsClient
+from scripts.devops_client import AzureDevOpsClient
 
 ORG = os.getenv("AZURE_DEVOPS_ORG", "khalid-dataops")
 PROJECT = os.getenv("AZURE_DEVOPS_PROJECT", "khalid-dataops")
 PAT = os.getenv("AZURE_DEVOPS_PAT", "")
+PIPELINE_FILE = "pipelines/azure-pipelines.yml"
 
 def main():
     if not PAT:
         print("❌ Erreur : La variable d'environnement AZURE_DEVOPS_PAT n'est pas définie.")
-        print("💡 En local : $env:AZURE_DEVOPS_PAT = 'votre_token'")
         print("💡 Sur GitHub Actions : Ajoutez AZURE_DEVOPS_PAT dans Settings > Secrets > Actions")
         sys.exit(1)
     print("=" * 80)
@@ -145,14 +135,15 @@ def main():
     pyspark_notebook = (root_dir / "notebooks" / "01_ingest_sales_pipeline.py").read_text(encoding="utf-8")
     agent_notebook = (root_dir / "notebooks" / "02_troubleshooter_agent.py").read_text(encoding="utf-8")
     deploy_script = (root_dir / "scripts" / "deploy_to_databricks.py").read_text(encoding="utf-8")
-    ci_cd_pipeline = (root_dir / "azure-pipelines.yml").read_text(encoding="utf-8")
+    ci_cd_pipeline = (root_dir / PIPELINE_FILE).read_text(encoding="utf-8")
+    pipeline_path = f"/{PIPELINE_FILE}"
     readme = (root_dir / "README.md").read_text(encoding="utf-8")
 
     files_to_push = {
         "/notebooks/01_ingest_sales_pipeline.py": pyspark_notebook,
         "/notebooks/02_troubleshooter_agent.py": agent_notebook,
         "/scripts/deploy_to_databricks.py": deploy_script,
-        "/azure-pipelines.yml": ci_cd_pipeline,
+        pipeline_path: ci_cd_pipeline,
         "/README.md": readme
     }
 
@@ -161,11 +152,8 @@ def main():
     if main_commit:
         print(f"ℹ️ La branche 'main' existe déjà (Commit: {main_commit[:8]}).")
         print("⚡ Synchronisation des Notebooks (01_ingest et 02_agent) et de la CI/CD sur 'main'...")
-        try:
-            client.push_to_existing_branch(repo_id, "main", files_to_push, "feat(dataops): synchronisation des notebooks et scripts de deploiement CI/CD")
-            print("✅ Synchronisation réussie sur la branche 'main' d'Azure DevOps !")
-        except Exception as pe:
-            print(f"ℹ️ Synchronisation API : {pe}")
+        client.push_to_existing_branch(repo_id, "main", files_to_push, "feat(dataops): synchronisation des notebooks et scripts de deploiement CI/CD")
+        print("✅ Synchronisation réussie sur la branche 'main' d'Azure DevOps !")
     else:
         print("⚡ Le repository est vide. Initialisation avec le premier commit sur 'main'...")
         res = client.push_initial_commit(repo_id, files_to_push, "feat(dataops): Initialisation du repo avec les pipelines PySpark et CI/CD")
@@ -173,26 +161,20 @@ def main():
 
     # 5. Enregistrement automatique de la Pipeline CI/CD dans Azure DevOps
     print("\n🚀 Configuration de la Pipeline CI/CD dans Azure DevOps...")
-    try:
-        pipeline = client.create_pipeline(repo_id=repo_id, repo_name=repo_name, yaml_path="/azure-pipelines.yml", pipeline_name="CI-CD-Databricks-Pipeline")
-        print(f"✅ Pipeline CI/CD enregistrée avec succès dans Azure DevOps ! ID #{pipeline.get('id')}")
-        print(f"🔗 URL : https://dev.azure.com/{ORG}/{PROJECT}/_build?definitionId={pipeline.get('id')}")
-    except Exception as pipe_err:
-        print(f"ℹ️ Note sur la création de la Pipeline : {pipe_err}")
+    pipeline_id = client.ensure_yaml_pipeline(repo_id, repo_name, pipeline_path, "CI-CD-Databricks-Pipeline")
+    print(f"✅ Pipeline Azure DevOps #{pipeline_id} configuré sur {pipeline_path}")
+    print(f"🔗 URL : https://dev.azure.com/{ORG}/{PROJECT}/_build?definitionId={pipeline_id}")
 
     # 6. Configuration automatique du secret DATABRICKS_TOKEN et lancement de la pipeline
     db_token = os.getenv("DATABRICKS_TOKEN")
     if db_token:
         print("\n🔑 Configuration sécurisée du DATABRICKS_TOKEN dans la Pipeline Azure DevOps...")
-        try:
-            client.set_pipeline_secret_variable("DATABRICKS_TOKEN", db_token)
-            print("✅ Secret DATABRICKS_TOKEN enregistré avec succès dans la Pipeline !")
-            print("🚀 Déclenchement de la Pipeline CI/CD Azure DevOps...")
-            build = client.queue_build()
-            print(f"✅ Pipeline lancée avec succès ! Build ID #{build.get('id')}")
-            print(f"🔗 Suivi du Run : {build.get('_links', {}).get('web', {}).get('href')}")
-        except Exception as qe:
-            print(f"ℹ️ Note sur le déclenchement de la pipeline : {qe}")
+        client.set_pipeline_secret_variable(pipeline_id, "DATABRICKS_TOKEN", db_token)
+        print("✅ Secret DATABRICKS_TOKEN enregistré avec succès dans la Pipeline !")
+        print("🚀 Déclenchement de la Pipeline CI/CD Azure DevOps...")
+        build = client.queue_build(pipeline_id)
+        print(f"✅ Pipeline lancée avec succès ! Build ID #{build.get('id')}")
+        print(f"🔗 Suivi du Run : {build.get('_links', {}).get('web', {}).get('href')}")
 
     print("\n🎉 INITIALISATION AZURE DEVOPS TERMINÉE !")
 

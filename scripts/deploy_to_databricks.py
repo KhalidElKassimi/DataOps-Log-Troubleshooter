@@ -6,17 +6,6 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-# Chargement des variables depuis .env local si présent
-root_dir = Path(__file__).resolve().parent.parent
-env_file = root_dir / ".env"
-if env_file.exists():
-    with open(env_file, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, v = line.split("=", 1)
-                os.environ.setdefault(k.strip(), v.strip())
-
 def get_or_create_job(host: str, headers: dict) -> int:
     """Recherche ou crée le Databricks Workflow Job via l'API REST de Databricks."""
     list_url = f"{host}/api/2.1/jobs/list"
@@ -82,7 +71,6 @@ def get_or_create_job(host: str, headers: dict) -> int:
                         "azure_devops_org": os.getenv("AZURE_DEVOPS_ORG", "khalid-dataops"),
                         "azure_devops_proj": os.getenv("AZURE_DEVOPS_PROJECT", "khalid-dataops"),
                         "azure_devops_pat": os.getenv("AZURE_DEVOPS_PAT", ""),
-                        "teams_webhook_url": os.getenv("TEAMS_WEBHOOK_URL", ""),
                         "outlook_logic_app_url": os.getenv("OUTLOOK_LOGIC_APP_URL", "")
                     }
                 }
