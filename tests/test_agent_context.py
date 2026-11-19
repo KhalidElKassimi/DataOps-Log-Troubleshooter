@@ -214,18 +214,93 @@ class AgentContextTests(unittest.TestCase):
             foundry_endpoint="https://example.invalid", ai_model_name="test", pipeline_name="test",
             SYSTEM_PROMPT="test", AGENT_TOOLS=[],
         )
-        execute = self.ns["execute_tool"] = Mock(side_effect=[{"status": "created"}, {"status": "sent"}])
+        tools = [
+            "create_azure_devops_work_item", "read_ingestion_notebook", "assess_incident",
+            "create_azure_devops_pull_request", "send_outlook_email",
+        ]
+        execute = self.ns["execute_tool"] = Mock(side_effect=[
+            {"status": "created"}, {"status": "read"}, {"status": "assessed", "category": "code"},
+            {"status": "created"}, {"status": "sent"},
+        ])
         with patch("urllib.request.urlopen", side_effect=[
-            response("create_azure_devops_pull_request"),
+            *(response(tool) for tool in tools[:4]),
             HTTPError("https://example.invalid", 429, "rate limited", {}, None),
             response("send_outlook_email"), response(None),
         ]) as send, patch("time.sleep"), redirect_stdout(io.StringIO()):
             self.ns["run_agent_diagnosis"]("error")
-        self.assertEqual([call.args[0] for call in execute.call_args_list], [
-            "create_azure_devops_pull_request", "send_outlook_email",
+        self.assertEqual([call.args[0] for call in execute.call_args_list], tools)
+        self.assertEqual(send.call_count, 7)
+        self.assertEqual(send.call_args_list[4].args[0].data, send.call_args_list[5].args[0].data)
+
+    def test_unchanged_cell_markers_in_context_do_not_block_targeted_patch(self):
+        source = "# Databricks notebook source\r\nx = 0\r\n# COMMAND ----------\r\ny = 1\r\n# COMMAND ----------\r\nz = 2\r\n"
+        original = "# COMMAND ----------\ny = 1\n# COMMAND ----------"
+        self.assertEqual(
+            self.ns["apply_section_patch"](source, original, original.replace("y = 1", "y = 3")),
+            source.replace("y = 1", "y = 3"),
+        )
+        with self.assertRaises(ValueError):
+            self.ns["apply_section_patch"](source, original, "y = 3")
+
+    def test_code_assessment_requires_evidence_from_read_source(self):
+        self.ns["INGEST_SOURCE"] = {"content": self.content}
+        with redirect_stdout(io.StringIO()):
+            result = self.ns["execute_tool"]("assess_incident", {
+                "category": "code", "reason": "Non nullable field receives None.",
+                "evidence": "unknown_code()",
+            })
+            self.assertEqual(result["status"], "error")
+            result = self.ns["execute_tool"]("assess_incident", {
+                "category": "code", "reason": "Non nullable field receives None.",
+                "evidence": "bad_data = [('TXN_1005', 14, None, 3)]",
+            })
+            self.assertEqual(result["status"], "assessed")
+            self.assertEqual(result["category"], "code")
+
+    def test_code_fix_is_required_and_invalid_patches_are_reformulated(self):
+        self._check_pr_workflow("code", [
+            {"status": "error", "retryable": True, "message": "patch invalide"},
+            {"status": "created"},
         ])
-        self.assertEqual(send.call_count, 4)
-        self.assertEqual(send.call_args_list[1].args[0].data, send.call_args_list[2].args[0].data)
+
+    def test_non_code_error_does_not_force_pr(self):
+        self._check_pr_workflow("configuration", [])
+
+    def test_repeated_patch_failures_send_alert_but_fail_job_explicitly(self):
+        with self.assertRaisesRegex(RuntimeError, "PR non créée"):
+            self._check_pr_workflow("code", [
+                {"status": "error", "retryable": True, "message": "patch invalide"},
+            ] * 3)
+
+    def _check_pr_workflow(self, category, patches):
+        self.ns.update(
+            foundry_endpoint="https://example.invalid", ai_model_name="test", pipeline_name="test",
+            SYSTEM_PROMPT="test", AGENT_TOOLS=[],
+        )
+        tools = [
+            "create_azure_devops_work_item", "read_ingestion_notebook", "assess_incident",
+            *(["create_azure_devops_pull_request"] * len(patches)), "send_outlook_email",
+        ]
+        replies = [{
+            "choices": [{"message": {"tool_calls": [
+                {"id": str(index), "function": {"name": name, "arguments": "{}"}},
+            ]}}],
+        } for index, name in enumerate(tools)]
+        replies.append({"choices": [{"message": {"content": "done"}}]})
+        execute = self.ns["execute_tool"] = Mock(side_effect=[
+            {"status": "created"}, {"status": "read"}, {"status": "assessed", "category": category},
+            *patches, {"status": "sent"},
+        ])
+        model = self.ns["request_model"] = Mock(side_effect=replies)
+        try:
+            with redirect_stdout(io.StringIO()):
+                self.ns["run_agent_diagnosis"]("error")
+        finally:
+            self.assertEqual([call.args[0] for call in execute.call_args_list], tools)
+            for call, name in zip(model.call_args_list, tools):
+                payload = json.loads(call.args[0].data)
+                self.assertEqual(payload["tool_choice"]["function"]["name"], name)
+                self.assertFalse(payload["parallel_tool_calls"])
 
 if __name__ == "__main__":
     unittest.main()
