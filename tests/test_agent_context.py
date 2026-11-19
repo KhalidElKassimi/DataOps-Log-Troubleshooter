@@ -256,15 +256,52 @@ class AgentContextTests(unittest.TestCase):
         with redirect_stdout(io.StringIO()):
             result = self.ns["execute_tool"]("assess_incident", {
                 "category": "code", "reason": "Non nullable field receives None.",
-                "evidence": "unknown_code()",
+                "start_line": 99, "end_line": 100,
             })
             self.assertEqual(result["status"], "error")
             result = self.ns["execute_tool"]("assess_incident", {
                 "category": "code", "reason": "Non nullable field receives None.",
-                "evidence": "bad_data = [('TXN_1005', 14, None, 3)]",
+                "start_line": 3, "end_line": 3,
             })
             self.assertEqual(result["status"], "assessed")
             self.assertEqual(result["category"], "code")
+            self.assertEqual(result["evidence"], "bad_data = [('TXN_1005', 14, None, 3)]")
+
+    def test_assessment_uses_numbered_lines_and_rejects_invalid_ranges(self):
+        helper = Mock()
+        helper.get_repositories.return_value = [{"id": "repo", "name": "repo"}]
+        helper.get_branch_commit.return_value = "main-commit"
+        helper.get_file_at_commit.return_value = self.content.replace("\n", "\r\n")
+        self.ns["DatabricksDevOpsHelper"] = Mock(return_value=helper)
+        with redirect_stdout(io.StringIO()):
+            result = self.ns["execute_tool"]("read_ingestion_notebook", {})
+            self.assertIn("3: bad_data = ", result["numbered_source"])
+            self.assertEqual(result["line_count"], 3)
+            for start, end in ((0, 0), (3, 2), (1, 99), (True, 1), (1, 1)):
+                with self.subTest(start=start, end=end):
+                    result = self.ns["execute_tool"]("assess_incident", {
+                        "category": "code", "reason": "Evidence required.",
+                        "start_line": start, "end_line": end,
+                    })
+                    self.assertEqual(result["status"], "error")
+            result = self.ns["execute_tool"]("assess_incident", {
+                "category": "code", "reason": "Field disallows None.",
+                "start_line": 2, "end_line": 3,
+            })
+            self.assertEqual(result["status"], "assessed")
+            self.assertEqual(result["evidence"], "\n".join(self.content.splitlines()[1:3]))
+
+    def test_failed_assessment_is_bounded_and_still_attempts_alert(self):
+        with self.assertRaisesRegex(RuntimeError, "Qualification impossible après 2 tentatives"):
+            self._check_pr_workflow("code", [], assessments=[
+                {"status": "error", "message": "invalid range"},
+            ] * 2)
+
+    def test_revised_assessment_can_continue_to_mandatory_pr(self):
+        self._check_pr_workflow("code", [{"status": "created"}], assessments=[
+            {"status": "error", "message": "invalid range"},
+            {"status": "assessed", "category": "code"},
+        ])
 
     def test_code_fix_is_required_and_invalid_patches_are_reformulated(self):
         self._check_pr_workflow("code", [
@@ -281,13 +318,15 @@ class AgentContextTests(unittest.TestCase):
                 {"status": "error", "retryable": True, "message": "patch invalide"},
             ] * 3)
 
-    def _check_pr_workflow(self, category, patches):
+    def _check_pr_workflow(self, category, patches, assessments=None):
         self.ns.update(
             foundry_endpoint="https://example.invalid", ai_model_name="test", pipeline_name="test",
             SYSTEM_PROMPT="test", AGENT_TOOLS=[],
         )
+        assessments = assessments or [{"status": "assessed", "category": category}]
         tools = [
-            "create_azure_devops_work_item", "read_ingestion_notebook", "assess_incident",
+            "create_azure_devops_work_item", "read_ingestion_notebook",
+            *(["assess_incident"] * len(assessments)),
             *(["create_azure_devops_pull_request"] * len(patches)), "send_outlook_email",
         ]
         replies = [{
@@ -297,7 +336,7 @@ class AgentContextTests(unittest.TestCase):
         } for index, name in enumerate(tools)]
         replies.append({"choices": [{"message": {"content": "done"}}]})
         execute = self.ns["execute_tool"] = Mock(side_effect=[
-            {"status": "created"}, {"status": "read"}, {"status": "assessed", "category": category},
+            {"status": "created"}, {"status": "read"}, *assessments,
             *patches, {"status": "sent"},
         ])
         model = self.ns["request_model"] = Mock(side_effect=replies)
