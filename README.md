@@ -116,6 +116,8 @@ En cas de `HTTP 429` Azure OpenAI, seul l'appel d'inférence est retenté (4 ten
 
 La CI installe `tests/requirements.txt`, puis exécute `python -B -m unittest discover -s tests -p "test_*.py"` pour couvrir le contexte réel, les secrets masqués, les versions incohérentes et les correctifs limités à un bloc. Les réponses simulées utilisent les vrais modèles du SDK Databricks épinglé, mais ne remplacent pas un test fonctionnel Databricks.
 
+La syntaxe est aussi vérifiée cellule par cellule, y compris les séparateurs indentés. Évitez les lignes commençant par un marqueur de cellule dans les chaînes multilignes : l'import Databricks peut les interpréter comme des séparateurs même si le fichier Python entier compile.
+
 Avant le déploiement, configurez la variable Azure DevOps `DATABRICKS_SILVER_SCHEMA` avec un schéma **Unity Catalog** existant réservé à la démonstration (`catalogue.schema`). L'identité du job doit disposer de `USE CATALOG`, `USE SCHEMA` et `CREATE TABLE`, et pouvoir modifier la table si elle existe déjà. Le notebook réinitialise `dataops_demo_silver_sales` à chaque run, sans utiliser DBFS root.
 
 1. Ouvrez l'interface Databricks via l'URL générée en output :  

@@ -2,6 +2,7 @@ import ast
 import base64
 import io
 import json
+import re
 from pathlib import Path
 import sys
 import types
@@ -19,6 +20,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class AgentContextTests(unittest.TestCase):
+    def test_notebook_cells_compile_individually(self):
+        for path in sorted((ROOT / "notebooks").glob("*.py")):
+            source = path.read_text(encoding="utf-8")
+            cells = re.split(r"^[ \t]*# COMMAND[^\n]*(?:\n|$)", source, flags=re.MULTILINE)
+            for index, cell in enumerate(cells, 1):
+                with self.subTest(notebook=path.name, cell=index):
+                    compile(cell, f"{path.name}:cell-{index}", "exec")
+
     def setUp(self):
         path = ROOT / "notebooks" / "02_troubleshooter_agent.py"
         tree = ast.parse(path.read_text(encoding="utf-8"))
