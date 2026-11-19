@@ -31,6 +31,7 @@ def get_or_create_job(host: str, headers: dict) -> int:
                 "job_cluster_key": "troubleshooter_cluster",
                 "new_cluster": {
                     "spark_version": "13.3.x-scala2.12",
+                    "data_security_mode": "SINGLE_USER",
                     "node_type_id": node_type,
                     "num_workers": 0,
                     "spark_conf": {
@@ -53,7 +54,8 @@ def get_or_create_job(host: str, headers: dict) -> int:
                 "task_key": "ingest_sales_pipeline",
                 "job_cluster_key": "troubleshooter_cluster",
                 "notebook_task": {
-                    "notebook_path": "/Shared/01_ingest_sales_pipeline"
+                    "notebook_path": "/Shared/01_ingest_sales_pipeline",
+                    "base_parameters": {"silver_schema": os.getenv("DATABRICKS_SILVER_SCHEMA", "").strip()}
                 }
             },
             {
@@ -123,6 +125,9 @@ def deploy():
     ado_pat = os.getenv("AZURE_DEVOPS_PAT", "").strip()
     if not ado_pat or ado_pat.startswith("$("):
         sys.exit("AZURE_DEVOPS_PAT manquant ou non configuré : ajoutez-le comme variable secrète du pipeline Azure DevOps avant de redéployer.")
+    silver_schema = os.getenv("DATABRICKS_SILVER_SCHEMA", "").strip()
+    if not silver_schema or silver_schema.startswith("$("):
+        sys.exit("DATABRICKS_SILVER_SCHEMA manquant : configurez un schéma Unity Catalog de démonstration (catalogue.schema) dans Azure DevOps.")
 
     headers = {
         "Authorization": f"Bearer {token}",

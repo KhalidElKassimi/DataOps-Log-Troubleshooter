@@ -5,6 +5,8 @@
 # MAGIC Ce notebook simule un pipeline DataOps d'ingestion PySpark en production.
 
 # COMMAND ----------
+import re
+
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType
 from pyspark.sql.functions import col, current_timestamp
@@ -17,6 +19,12 @@ spark = SparkSession.builder.appName("SalesDataOpsPipeline").getOrCreate()
 # MAGIC La table cible attend des prix unitaires typés en DOUBLE.
 
 # COMMAND ----------
+dbutils.widgets.text("silver_schema", "")
+silver_schema_name = dbutils.widgets.get("silver_schema").strip()
+if not re.fullmatch(r"[a-zA-Z0-9_]+\.[a-zA-Z0-9_]+", silver_schema_name) or silver_schema_name.split(".")[0].lower() in {"hive_metastore", "spark_catalog"}:
+    raise ValueError("Configurez silver_schema avec un catalogue et un schéma Unity Catalog de démonstration (catalogue.schema).")
+silver_table = f"{silver_schema_name}.dataops_demo_silver_sales"
+
 # Schéma nominal strict de la table Silver
 silver_schema = StructType([
     StructField("transaction_id", StringType(), False),
@@ -33,8 +41,8 @@ initial_data = [
 ]
 
 df_initial = spark.createDataFrame(initial_data, silver_schema)
-df_initial.write.format("delta").mode("overwrite").save("/tmp/delta/silver_sales")
-print("Table Delta /tmp/delta/silver_sales initialisée avec succès.")
+df_initial.write.format("delta").mode("overwrite").saveAsTable(silver_table)
+print(f"Table Delta {silver_table} initialisée avec succès.")
 
 # COMMAND ----------
 # MAGIC %md
@@ -66,4 +74,4 @@ df_bad = spark.createDataFrame(bad_data, bad_batch_schema)
 print("Tentative d'écriture du lot corrompu dans Delta Lake...")
 
 # Cette opération va échouer avec AnalysisException (Schema Mismatch) que notre agent Foundry va analyser
-df_bad.write.format("delta").mode("append").save("/tmp/delta/silver_sales")
+df_bad.write.format("delta").mode("append").saveAsTable(silver_table)

@@ -55,6 +55,7 @@ stages:
       env:
         DATABRICKS_HOST: $(DATABRICKS_HOST)
         DATABRICKS_TOKEN: $(DATABRICKS_TOKEN)
+        DATABRICKS_SILVER_SCHEMA: $(DATABRICKS_SILVER_SCHEMA)
         FOUNDRY_ENDPOINT: 'https://aifs-dataops-troubleshooter-dev-do3dh2.openai.azure.com/'
         AZURE_DEVOPS_ORG: 'khalid-dataops'
         AZURE_DEVOPS_PROJECT: 'khalid-dataops'

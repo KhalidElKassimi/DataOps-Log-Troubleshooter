@@ -1,5 +1,6 @@
 import os
 import sys
+from urllib.error import HTTPError
 from pathlib import Path
 
 # Add project root to sys.path
@@ -30,15 +31,18 @@ def main():
     try:
         project = client.get_project_details()
         print(f"✅ Projet accessible : {project.get('name')} (ID: {project.get('id')})")
-    except Exception as e:
-        print(f"❌ Erreur d'accès au projet : {e}")
-        return
+    except HTTPError as error:
+        if error.code not in (401, 403):
+            raise
+        sys.exit(
+            f"❌ Azure DevOps HTTP {error.code} : accès refusé au projet {ORG}/{PROJECT}. "
+            "Vérifiez le secret GitHub Actions AZURE_DEVOPS_PAT et les droits de son compte sur le projet."
+        )
 
     # 2. Vérification des Teams
     teams = client.get_teams()
     if not teams:
-        print("❌ Aucune équipe trouvée dans le projet.")
-        return
+        sys.exit("❌ Aucune équipe trouvée dans le projet : synchronisation non exécutée.")
     team = teams[0]
     team_name = team["name"]
     print(f"👥 Équipe par défaut : {team_name} (ID: {team['id']})")
@@ -123,8 +127,7 @@ def main():
     print("\n📦 Configuration et synchronisation du Git Repository...")
     repos = client.get_repositories()
     if not repos:
-        print("❌ Aucun repository Git trouvé dans le projet.")
-        return
+        sys.exit("❌ Aucun dépôt Git trouvé dans le projet : synchronisation non exécutée.")
 
     repo = repos[0]
     repo_id = repo["id"]

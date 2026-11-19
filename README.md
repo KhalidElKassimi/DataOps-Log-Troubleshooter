@@ -94,11 +94,16 @@ Dans Azure DevOps Pipelines, configurez `DATABRICKS_TOKEN`, `FOUNDRY_API_KEY`, `
 
 Le workflow GitHub publie [`pipelines/azure-pipelines.yml`](./pipelines/azure-pipelines.yml), puis configure le pipeline Azure DevOps sur ce chemin. Si le pipeline existe déjà dans le même dépôt, le workflow met à jour son chemin sans le recréer. Une fois la migration vérifiée, vous pouvez retirer l'ancien YAML à la racine d'Azure Repos.
 
+Si le workflow GitHub échoue avec `HTTP 401` ou `403` à la vérification du projet, mettez à jour le secret **GitHub → Settings → Secrets and variables → Actions → `AZURE_DEVOPS_PAT`**. Utilisez un PAT valide pour l'organisation Azure DevOps cible, avec **Project and Team (Read)** pour lire le projet et **Code (Read & write)** pour publier les fichiers. Le compte doit avoir accès au projet et pouvoir contribuer au dépôt. Ce secret est distinct de la variable secrète du pipeline Azure DevOps. Relancez ensuite le workflow GitHub sur `main` et vérifiez le message de synchronisation dans ses logs.
+
 Si le notebook signale `FOUNDRY_API_KEY` manquante, ajoutez une clé valide du compte Azure OpenAI `aifs-dataops-troubleshooter-dev` dans **Azure DevOps → Pipelines → pipeline Databricks → Modifier → Variables** et marquez-la comme secrète. Le workflow GitHub n'enregistre pas cette clé. Relancez ensuite le pipeline Azure DevOps pour mettre à jour le job, puis testez depuis **Databricks → Workflows** : une exécution directe du notebook ne reçoit pas les paramètres du job.
 
 Si la création du ticket renvoie une réponse non JSON, ou un HTTP `401`/`403`, vérifiez `AZURE_DEVOPS_PAT` au même endroit. Le secret GitHub du même nom sert à la synchronisation et n'est pas copié dans Azure DevOps Pipelines. Utilisez un PAT valide pour l'organisation cible, avec **Work Items (Read & write)** et **Code (Read & write)** pour la PR. Relancez le pipeline Azure DevOps après toute modification de la variable.
 
 ### 2. Déclenchement du Workflow sur Azure Databricks
+
+Avant le déploiement, configurez la variable Azure DevOps `DATABRICKS_SILVER_SCHEMA` avec un schéma **Unity Catalog** existant réservé à la démonstration (`catalogue.schema`). L'identité du job doit disposer de `USE CATALOG`, `USE SCHEMA` et `CREATE TABLE`, et pouvoir modifier la table si elle existe déjà. Le notebook réinitialise `dataops_demo_silver_sales` à chaque run, sans utiliser DBFS root.
+
 1. Ouvrez l'interface Databricks via l'URL générée en output :  
    `https://<databricks_workspace_url>#job/<databricks_job_id>`
 2. Cliquez sur le bouton **"Run now"**.

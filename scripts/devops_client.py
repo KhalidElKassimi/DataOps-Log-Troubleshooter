@@ -34,6 +34,8 @@ class AzureDevOpsClient:
                     return json.loads(content)
                 return {"status": status}
         except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                raise
             err_body = e.read().decode("utf-8")
             raise Exception(f"HTTP {e.code} Error on {url}: {err_body}")
 
