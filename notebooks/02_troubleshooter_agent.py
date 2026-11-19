@@ -46,6 +46,7 @@ try:
     dbutils.widgets.text("ai_model_name", "gpt-4.1-mini")
     dbutils.widgets.text("pipeline_name", "01_ingest_sales_pipeline")
     dbutils.widgets.text("failed_task_run_id", "")
+    dbutils.widgets.text("job_run_id", "")
     dbutils.widgets.text("deployed_commit", "")
     dbutils.widgets.text("azure_devops_org", "khalid-dataops")
     dbutils.widgets.text("azure_devops_proj", "khalid-dataops")
@@ -59,6 +60,7 @@ foundry_api_key = get_param("foundry_api_key", "FOUNDRY_API_KEY", "")
 ai_model_name = get_param("ai_model_name", "AI_MODEL_NAME", "gpt-4.1-mini")
 pipeline_name = get_param("pipeline_name", "PIPELINE_NAME", "01_ingest_sales_pipeline")
 failed_task_run_id = get_param("failed_task_run_id", "FAILED_TASK_RUN_ID", "")
+job_run_id = get_param("job_run_id", "JOB_RUN_ID", "")
 deployed_commit = get_param("deployed_commit", "DEPLOYED_COMMIT", "")
 ado_org = get_param("azure_devops_org", "AZURE_DEVOPS_ORG", "khalid-dataops")
 ado_proj = get_param("azure_devops_proj", "AZURE_DEVOPS_PROJECT", "khalid-dataops")
@@ -118,8 +120,14 @@ def load_failed_task_error(task_run_id: str) -> str:
         "trace": trace_excerpt, "source_verified": False,
     }
     try:
-        run = client.jobs.get_run(run_id=int(task_run_id))
-        path = run.notebook_task.notebook_path if run.notebook_task else None
+        if not re.fullmatch(r"[1-9][0-9]*", job_run_id):
+            raise ValueError("Identifiant du run parent manquant : redéployez le workflow.")
+        run = client.jobs.get_run(run_id=int(job_run_id))
+        tasks = [task for task in (run.tasks or []) if task.run_id == int(task_run_id)]
+        if len(tasks) != 1:
+            raise ValueError("La tâche en échec ne correspond pas à une tâche unique du run parent.")
+        notebook_task = tasks[0].notebook_task
+        path = notebook_task.notebook_path if notebook_task else None
         if not path or not re.fullmatch(r"/Shared/dataops_versions/ingest_[a-f0-9]{64}", path):
             raise ValueError("Le run ne référence pas une copie versionnée : redéploiement requis.")
         exported = client.workspace.export(path=path, format=ExportFormat.SOURCE)

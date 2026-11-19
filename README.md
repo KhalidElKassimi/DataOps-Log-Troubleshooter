@@ -106,7 +106,9 @@ Le déploiement crée aussi une copie de l'ingestion sous `/Shared/dataops_versi
 
 Une source non vérifiable, un ancien job non versionné ou une différence entre le code exécuté et `main` bloque la PR, mais autorise un diagnostic signalant le manque de contexte. Les PR sont des brouillons : la compilation Python est contrôlée, pas l'exécution Spark. Testez le correctif sur un calcul et des données isolés avant de publier/fusionner la PR. L'agent ne doit pas décider seul de remplacer un prix, supprimer une transaction ou changer une contrainte métier.
 
-La CI exécute `python -B -m unittest discover -s tests -p "test_*.py"` pour couvrir le contexte réel, les secrets masqués, les versions incohérentes et les correctifs limités à un bloc. Ces tests simulés ne remplacent pas un test fonctionnel Databricks.
+Le workflow transmet `job_run_id` (`{{job.run_id}}`) et l'identifiant de la tâche en échec. Le diagnostic lit `Run.tasks` dans le run parent et sélectionne la tâche par son `run_id` : `notebook_task` appartient à `RunTask`, pas à `Run`. Si la tâche manque ou ne correspond pas, le diagnostic continue avec une source non vérifiée et la PR reste bloquée.
+
+La CI installe `tests/requirements.txt`, puis exécute `python -B -m unittest discover -s tests -p "test_*.py"` pour couvrir le contexte réel, les secrets masqués, les versions incohérentes et les correctifs limités à un bloc. Les réponses simulées utilisent les vrais modèles du SDK Databricks épinglé, mais ne remplacent pas un test fonctionnel Databricks.
 
 Avant le déploiement, configurez la variable Azure DevOps `DATABRICKS_SILVER_SCHEMA` avec un schéma **Unity Catalog** existant réservé à la démonstration (`catalogue.schema`). L'identité du job doit disposer de `USE CATALOG`, `USE SCHEMA` et `CREATE TABLE`, et pouvoir modifier la table si elle existe déjà. Le notebook réinitialise `dataops_demo_silver_sales` à chaque run, sans utiliser DBFS root.
 

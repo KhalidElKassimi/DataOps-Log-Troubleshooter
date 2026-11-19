@@ -73,6 +73,7 @@ def get_or_create_job(host: str, headers: dict) -> int:
                     "base_parameters": {
                         "pipeline_name": "01_ingest_sales_pipeline",
                         "failed_task_run_id": "{{tasks.ingest_sales_pipeline.run_id}}",
+                        "job_run_id": "{{job.run_id}}",
                         "deployed_commit": os.getenv("BUILD_SOURCEVERSION", ""),
                         "foundry_endpoint": os.getenv("FOUNDRY_ENDPOINT", "https://aifs-dataops-troubleshooter-dev-do3dh2.openai.azure.com/"),
                         "foundry_api_key": os.getenv("FOUNDRY_API_KEY", ""),

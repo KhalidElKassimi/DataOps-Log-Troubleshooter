@@ -149,6 +149,7 @@ def main():
         pipeline_path: ci_cd_pipeline,
         "/README.md": readme
     }
+    files_to_push["/tests/requirements.txt"] = (root_dir / "tests" / "requirements.txt").read_text(encoding="utf-8")
     for test_file in sorted((root_dir / "tests").glob("test_*.py")):
         files_to_push[f"/tests/{test_file.name}"] = test_file.read_text(encoding="utf-8")
 

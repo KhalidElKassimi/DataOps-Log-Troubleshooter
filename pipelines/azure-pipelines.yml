@@ -32,6 +32,7 @@ stages:
 
     - script: |
         python -m pip install --upgrade pip
+        python -m pip install -r tests/requirements.txt
         # Validation de la compilation des scripts PySpark et Agent
         python -m py_compile notebooks/01_ingest_sales_pipeline.py
         python -m py_compile notebooks/02_troubleshooter_agent.py

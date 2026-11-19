@@ -9,6 +9,9 @@ import unittest
 from contextlib import redirect_stdout
 from unittest.mock import Mock, patch
 
+from databricks.sdk.service.jobs import NotebookTask, Run, RunOutput, RunTask
+from databricks.sdk.service.workspace import ExportResponse
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -27,7 +30,7 @@ class AgentContextTests(unittest.TestCase):
         self.ns.update(
             foundry_api_key="model-secret", ado_pat="ado-secret", outlook_logic_app_url="",
             ado_org="org", ado_proj="project", deployed_commit="abc123",
-            failed_task_run_id="123", INGEST_SOURCE=None, RUN_CONTEXT={},
+            failed_task_run_id="123", job_run_id="456", INGEST_SOURCE=None, RUN_CONTEXT={},
             LAST_WORK_ITEM_ID=13, LAST_PR_ID=None,
             INGEST_NOTEBOOK_PATH="/notebooks/01_ingest_sales_pipeline.py",
         )
@@ -38,16 +41,18 @@ class AgentContextTests(unittest.TestCase):
         )
         self.fingerprint = self.ns["source_fingerprint"](self.content)
         self.client = Mock()
-        self.client.jobs.get_run_output.return_value = types.SimpleNamespace(
+        self.client.jobs.get_run_output.return_value = RunOutput(
             error="PySparkValueError: CANNOT_BE_NONE",
             error_trace="unit_price nullable=False\nbad_data = [('TXN_1005', 14, None, 3)]\nToken=hidden\nmodel-secret",
         )
-        self.client.jobs.get_run.return_value = types.SimpleNamespace(
-            notebook_task=types.SimpleNamespace(
+        self.client.jobs.get_run.return_value = Run(
+            run_id=456,
+            tasks=[RunTask(run_id=789, notebook_task=NotebookTask(notebook_path="/Shared/unrelated")),
+                   RunTask(run_id=123, notebook_task=NotebookTask(
                 notebook_path=f"/Shared/dataops_versions/ingest_{self.fingerprint}"
-            )
+            ))]
         )
-        self.client.workspace.export.return_value = types.SimpleNamespace(
+        self.client.workspace.export.return_value = ExportResponse(
             content=base64.b64encode(self.content.encode()).decode()
         )
         sdk = types.ModuleType("databricks.sdk")
@@ -74,14 +79,28 @@ class AgentContextTests(unittest.TestCase):
         self.assertNotIn("hidden", context["trace"])
         self.assertNotIn("model-secret", context["trace"])
         self.assertEqual(context["executed_source"], self.content)
-        self.client.jobs.get_run.assert_called_once_with(run_id=123)
+        self.client.jobs.get_run.assert_called_once_with(run_id=456)
+        self.client.workspace.export.assert_called_once_with(
+            path=f"/Shared/dataops_versions/ingest_{self.fingerprint}", format="SOURCE",
+        )
 
     def test_modified_snapshot_or_legacy_path_is_not_trusted(self):
         for path in ("/Shared/01_ingest_sales_pipeline", "/Shared/dataops_versions/ingest_" + "0" * 64):
             with self.subTest(path=path):
-                self.client.jobs.get_run.return_value.notebook_task.notebook_path = path
+                self.client.jobs.get_run.return_value.tasks[1].notebook_task.notebook_path = path
                 self.load()
                 self.assertFalse(self.ns["RUN_CONTEXT"]["source_verified"])
+
+    def test_missing_or_unmatched_parent_blocks_source_export_not_diagnosis(self):
+        for tasks in (None, [], [RunTask(run_id=789)], [RunTask(run_id=123)]):
+            with self.subTest(tasks=tasks):
+                self.client.jobs.get_run.return_value = Run(tasks=tasks)
+                self.assertIn("CANNOT_BE_NONE", self.load())
+                self.assertFalse(self.ns["RUN_CONTEXT"]["source_verified"])
+        self.ns["job_run_id"] = ""
+        self.assertIn("CANNOT_BE_NONE", self.load())
+        self.assertFalse(self.ns["RUN_CONTEXT"]["source_verified"])
+        self.client.workspace.export.assert_not_called()
 
     def test_missing_error_stops_diagnosis(self):
         self.client.jobs.get_run_output.return_value.error = ""
@@ -156,6 +175,7 @@ class AgentContextTests(unittest.TestCase):
         params = settings["tasks"][1]["notebook_task"]["base_parameters"]
         self.assertEqual(params["deployed_commit"], "deployed-sha")
         self.assertEqual(params["failed_task_run_id"], "{{tasks.ingest_sales_pipeline.run_id}}")
+        self.assertEqual(params["job_run_id"], "{{job.run_id}}")
 
 if __name__ == "__main__":
     unittest.main()
