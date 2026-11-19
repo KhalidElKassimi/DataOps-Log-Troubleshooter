@@ -102,6 +102,12 @@ Si la création du ticket renvoie une réponse non JSON, ou un HTTP `401`/`403`,
 
 ### 2. Déclenchement du Workflow sur Azure Databricks
 
+Le déploiement crée aussi une copie de l'ingestion sous `/Shared/dataops_versions/ingest_<sha256>` et utilise cette copie pour le job. Le diagnostic récupère le chemin depuis le run en échec, exporte le code, vérifie son empreinte et transmet au modèle le code et la trace filtrés des secrets connus et des paramètres sensibles. Le commit de déploiement Azure Repos (`BUILD_SOURCEVERSION`) accompagne le contexte ; il ne remplace pas la vérification du contenu. Évitez les secrets et données personnelles dans les notebooks et les messages d'exception : ce filtrage n'est pas une garantie d'anonymisation universelle.
+
+Une source non vérifiable, un ancien job non versionné ou une différence entre le code exécuté et `main` bloque la PR, mais autorise un diagnostic signalant le manque de contexte. Les PR sont des brouillons : la compilation Python est contrôlée, pas l'exécution Spark. Testez le correctif sur un calcul et des données isolés avant de publier/fusionner la PR. L'agent ne doit pas décider seul de remplacer un prix, supprimer une transaction ou changer une contrainte métier.
+
+La CI exécute `python -B -m unittest discover -s tests -p "test_*.py"` pour couvrir le contexte réel, les secrets masqués, les versions incohérentes et les correctifs limités à un bloc. Ces tests simulés ne remplacent pas un test fonctionnel Databricks.
+
 Avant le déploiement, configurez la variable Azure DevOps `DATABRICKS_SILVER_SCHEMA` avec un schéma **Unity Catalog** existant réservé à la démonstration (`catalogue.schema`). L'identité du job doit disposer de `USE CATALOG`, `USE SCHEMA` et `CREATE TABLE`, et pouvoir modifier la table si elle existe déjà. Le notebook réinitialise `dataops_demo_silver_sales` à chaque run, sans utiliser DBFS root.
 
 1. Ouvrez l'interface Databricks via l'URL générée en output :  

@@ -7,6 +7,8 @@ trigger:
     include:
       - notebooks/*
       - scripts/deploy_to_databricks.py
+      - tests/*
+      - pipelines/azure-pipelines.yml
 
 pool:
   vmImage: 'ubuntu-latest'
@@ -33,6 +35,7 @@ stages:
         # Validation de la compilation des scripts PySpark et Agent
         python -m py_compile notebooks/01_ingest_sales_pipeline.py
         python -m py_compile notebooks/02_troubleshooter_agent.py
+        python -B -m unittest discover -s tests -p "test_*.py"
         echo "✅ Tous les scripts PySpark et Agent sont syntaxiquement valides."
       displayName: 'Validation syntaxique des Notebooks'
 

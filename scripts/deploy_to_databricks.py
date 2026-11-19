@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import json
 import os
 import sys
@@ -8,6 +9,9 @@ from pathlib import Path
 
 def get_or_create_job(host: str, headers: dict) -> int:
     """Recherche ou crée le Databricks Workflow Job via l'API REST de Databricks."""
+    ingestion_source = (Path(__file__).resolve().parent.parent / "notebooks" / "01_ingest_sales_pipeline.py").read_text(encoding="utf-8")
+    source_hash = hashlib.sha256(ingestion_source.replace("\r\n", "\n").rstrip("\n").encode("utf-8")).hexdigest()
+    ingestion_path = f"/Shared/dataops_versions/ingest_{source_hash}"
     list_url = f"{host}/api/2.1/jobs/list"
     req_list = urllib.request.Request(list_url, headers=headers)
     job_id = None
@@ -54,7 +58,7 @@ def get_or_create_job(host: str, headers: dict) -> int:
                 "task_key": "ingest_sales_pipeline",
                 "job_cluster_key": "troubleshooter_cluster",
                 "notebook_task": {
-                    "notebook_path": "/Shared/01_ingest_sales_pipeline",
+                    "notebook_path": ingestion_path,
                     "base_parameters": {"silver_schema": os.getenv("DATABRICKS_SILVER_SCHEMA", "").strip()}
                 }
             },
@@ -69,6 +73,7 @@ def get_or_create_job(host: str, headers: dict) -> int:
                     "base_parameters": {
                         "pipeline_name": "01_ingest_sales_pipeline",
                         "failed_task_run_id": "{{tasks.ingest_sales_pipeline.run_id}}",
+                        "deployed_commit": os.getenv("BUILD_SOURCEVERSION", ""),
                         "foundry_endpoint": os.getenv("FOUNDRY_ENDPOINT", "https://aifs-dataops-troubleshooter-dev-do3dh2.openai.azure.com/"),
                         "foundry_api_key": os.getenv("FOUNDRY_API_KEY", ""),
                         "ai_model_name": os.getenv("AI_MODEL_NAME", "gpt-4.1-mini"),
@@ -142,6 +147,17 @@ def deploy():
         {"local": root_dir / "notebooks" / "01_ingest_sales_pipeline.py", "remote": "/Shared/01_ingest_sales_pipeline"},
         {"local": root_dir / "notebooks" / "02_troubleshooter_agent.py", "remote": "/Shared/02_troubleshooter_agent"}
     ]
+
+    version_dir = "/Shared/dataops_versions"
+    mkdir_request = urllib.request.Request(
+        f"{host}/api/2.0/workspace/mkdirs",
+        data=json.dumps({"path": version_dir}).encode("utf-8"), headers=headers, method="POST",
+    )
+    with urllib.request.urlopen(mkdir_request, timeout=30):
+        pass
+    ingestion_source = notebooks[0]["local"].read_text(encoding="utf-8")
+    source_hash = hashlib.sha256(ingestion_source.replace("\r\n", "\n").rstrip("\n").encode("utf-8")).hexdigest()
+    notebooks.append({"local": notebooks[0]["local"], "remote": f"{version_dir}/ingest_{source_hash}"})
 
     for nb in notebooks:
         local_path = nb["local"]
