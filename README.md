@@ -108,6 +108,8 @@ Une source non vérifiable, un ancien job non versionné ou une différence entr
 
 Le workflow transmet `job_run_id` (`{{job.run_id}}`) et l'identifiant de la tâche en échec. Le diagnostic lit `Run.tasks` dans le run parent et sélectionne la tâche par son `run_id` : `notebook_task` appartient à `RunTask`, pas à `Run`. Si la tâche manque ou ne correspond pas, le diagnostic continue avec une source non vérifiée et la PR reste bloquée.
 
+En cas de `HTTP 429` Azure OpenAI, seul l'appel d'inférence est retenté (4 tentatives maximum). Le délai `retry-after-ms` ou `Retry-After` est respecté dans une limite de 120 secondes par attente ; sinon le diagnostic échoue explicitement. Les outils déjà exécutés ne sont pas rejoués par cette reprise. Si le quota reste épuisé, consultez les tickets et PR déjà créés avant de relancer le workflow et ne supposez pas que le mail a été envoyé. Vérifiez le quota TPM/RPM du déploiement Azure OpenAI si l'erreur se répète.
+
 La CI installe `tests/requirements.txt`, puis exécute `python -B -m unittest discover -s tests -p "test_*.py"` pour couvrir le contexte réel, les secrets masqués, les versions incohérentes et les correctifs limités à un bloc. Les réponses simulées utilisent les vrais modèles du SDK Databricks épinglé, mais ne remplacent pas un test fonctionnel Databricks.
 
 Avant le déploiement, configurez la variable Azure DevOps `DATABRICKS_SILVER_SCHEMA` avec un schéma **Unity Catalog** existant réservé à la démonstration (`catalogue.schema`). L'identité du job doit disposer de `USE CATALOG`, `USE SCHEMA` et `CREATE TABLE`, et pouvoir modifier la table si elle existe déjà. Le notebook réinitialise `dataops_demo_silver_sales` à chaque run, sans utiliser DBFS root.

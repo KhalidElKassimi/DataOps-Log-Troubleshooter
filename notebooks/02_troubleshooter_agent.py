@@ -11,10 +11,13 @@
 # COMMAND ----------
 import base64
 import hashlib
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from html import escape
 import json
 import os
 import re
+import time
 import urllib.parse
 import urllib.request
 import urllib.error
@@ -612,6 +615,39 @@ Ne prétends pas avoir testé un correctif dans Spark : seule sa syntaxe est vé
 3. Envoie l'alerte Outlook avec le diagnostic et les liens confirmés disponibles, même si aucune PR n'a été créée.
 Ne présente jamais une action échouée comme réussie. Ne répète pas les appels échoués."""
 
+def request_model(req: urllib.request.Request) -> Dict[str, Any]:
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as error:
+            if error.code != 429:
+                raise
+            if attempt == 3:
+                raise RuntimeError(
+                    "Quota Azure OpenAI toujours atteint après 4 tentatives. "
+                    "Les actions déjà effectuées sont conservées ; les étapes suivantes ne sont pas confirmées."
+                ) from None
+            delay = 5.0 * (2 ** attempt)
+            retry_ms = error.headers.get("retry-after-ms") if error.headers else None
+            retry_after = error.headers.get("Retry-After") if error.headers else None
+            if retry_ms is not None:
+                delay = float(retry_ms) / 1000
+            elif retry_after is not None:
+                try:
+                    delay = float(retry_after)
+                except ValueError:
+                    delay = (parsedate_to_datetime(retry_after) - datetime.now(timezone.utc)).total_seconds()
+            if not 0 <= delay <= 120:
+                raise RuntimeError(
+                    "Quota Azure OpenAI : délai demandé hors de la fenêtre de reprise (120 s). "
+                    "Vérifiez le quota avant une nouvelle exécution ; ne recréez pas les actions déjà effectuées."
+                ) from None
+            print(f"⏳ Azure OpenAI HTTP 429 : nouvelle tentative de l'inférence dans {delay:g} s, sans rejouer les outils.")
+            time.sleep(delay)
+    raise RuntimeError("Aucune réponse Azure OpenAI reçue.")
+
+
 def run_agent_diagnosis(error_log: str):
     global INGEST_SOURCE
     INGEST_SOURCE = None
@@ -660,36 +696,37 @@ def run_agent_diagnosis(error_log: str):
         
         failed_work_item = None
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                choice = data["choices"][0]["message"]
-                messages.append(choice)
-                
-                tool_calls = choice.get("tool_calls", [])
-                if not tool_calls:
-                    print("\n📝 Synthèse finale de l'Agent IA :")
-                    print(choice.get("content", ""))
+            data = request_model(req)
+            choice = data["choices"][0]["message"]
+            messages.append(choice)
+
+            tool_calls = choice.get("tool_calls", [])
+            if not tool_calls:
+                print("\n📝 Synthèse finale de l'Agent IA :")
+                print(choice.get("content", ""))
+                break
+
+            print(f"\n🧠 [Azure AI Foundry - Tour {turn+1}] {len(tool_calls)} Action(s) demandée(s) :")
+            for tc in tool_calls:
+                tc_id = tc.get("id")
+                func = tc.get("function", {})
+                f_name = func.get("name")
+                f_args = json.loads(func.get("arguments", "{}"))
+                result = execute_tool(f_name, f_args)
+                if f_name == "create_azure_devops_work_item" and result.get("status") != "created":
+                    failed_work_item = result.get("message") or "Création du ticket non confirmée."
                     break
-                    
-                print(f"\n🧠 [Azure AI Foundry - Tour {turn+1}] {len(tool_calls)} Action(s) demandée(s) :")
-                for tc in tool_calls:
-                    tc_id = tc.get("id")
-                    func = tc.get("function", {})
-                    f_name = func.get("name")
-                    f_args = json.loads(func.get("arguments", "{}"))
-                    result = execute_tool(f_name, f_args)
-                    if f_name == "create_azure_devops_work_item" and result.get("status") != "created":
-                        failed_work_item = result.get("message") or "Création du ticket non confirmée."
-                        break
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc_id,
-                        "name": f_name,
-                        "content": json.dumps(result)
-                    })
-        except Exception as e:
-            print(f"❌ Erreur lors de l'appel à Azure AI Foundry : {e}")
-            break
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc_id,
+                    "name": f_name,
+                    "content": json.dumps(result)
+                })
+        except (urllib.error.URLError, TimeoutError, ValueError, KeyError, IndexError, RuntimeError) as error:
+            raise RuntimeError(
+                f"Diagnostic interrompu : {sanitize_context(str(error))}. "
+                "Les actions déjà effectuées sont conservées ; l'envoi Outlook ne doit pas être supposé réussi."
+            ) from None
         if failed_work_item is not None:
             raise RuntimeError(f"Remédiation arrêtée après l'échec du ticket Azure DevOps : {failed_work_item}")
 

@@ -8,6 +8,8 @@ import types
 import unittest
 from contextlib import redirect_stdout
 from unittest.mock import Mock, patch
+from urllib.error import HTTPError
+from urllib.request import Request
 
 from databricks.sdk.service.jobs import NotebookTask, Run, RunOutput, RunTask
 from databricks.sdk.service.workspace import ExportResponse
@@ -176,6 +178,54 @@ class AgentContextTests(unittest.TestCase):
         self.assertEqual(params["deployed_commit"], "deployed-sha")
         self.assertEqual(params["failed_task_run_id"], "{{tasks.ingest_sales_pipeline.run_id}}")
         self.assertEqual(params["job_run_id"], "{{job.run_id}}")
+
+    def test_rate_limit_respects_delays_and_reuses_same_request(self):
+        req = Request("https://example.invalid", data=b"{}")
+        for headers, delay in (({"Retry-After": "9"}, 9), ({"retry-after-ms": "250"}, 0.25), ({}, 5)):
+            with self.subTest(headers=headers), patch("urllib.request.urlopen", side_effect=[
+                HTTPError(req.full_url, 429, "rate limited", headers, None),
+                io.BytesIO(b'{"choices": []}'),
+            ]) as send, patch("time.sleep") as sleep, redirect_stdout(io.StringIO()):
+                self.ns["request_model"](req)
+                self.assertEqual(send.call_count, 2)
+                self.assertIs(send.call_args_list[0].args[0], send.call_args_list[1].args[0])
+                sleep.assert_called_once_with(delay)
+
+    def test_rate_limit_is_bounded_and_other_http_errors_not_retried(self):
+        req = Request("https://example.invalid", data=b"{}")
+        for status, headers, calls in ((429, {}, 4), (429, {"Retry-After": "300"}, 1), (401, {}, 1)):
+            with self.subTest(status=status, headers=headers), patch("urllib.request.urlopen", side_effect=HTTPError(
+                req.full_url, status, "rejected", headers, None,
+            )) as send, patch("time.sleep"), redirect_stdout(io.StringIO()):
+                with self.assertRaises((RuntimeError, HTTPError)):
+                    self.ns["request_model"](req)
+                self.assertEqual(send.call_count, calls)
+
+    def test_rate_limit_after_pr_does_not_repeat_tool_and_continues_to_email(self):
+        def response(tool):
+            message = {"content": "done"}
+            if tool:
+                message["tool_calls"] = [{
+                    "id": tool, "function": {"name": tool, "arguments": "{}"},
+                }]
+            return io.BytesIO(json.dumps({"choices": [{"message": message}]}).encode())
+
+        self.ns.update(
+            foundry_endpoint="https://example.invalid", ai_model_name="test", pipeline_name="test",
+            SYSTEM_PROMPT="test", AGENT_TOOLS=[],
+        )
+        execute = self.ns["execute_tool"] = Mock(side_effect=[{"status": "created"}, {"status": "sent"}])
+        with patch("urllib.request.urlopen", side_effect=[
+            response("create_azure_devops_pull_request"),
+            HTTPError("https://example.invalid", 429, "rate limited", {}, None),
+            response("send_outlook_email"), response(None),
+        ]) as send, patch("time.sleep"), redirect_stdout(io.StringIO()):
+            self.ns["run_agent_diagnosis"]("error")
+        self.assertEqual([call.args[0] for call in execute.call_args_list], [
+            "create_azure_devops_pull_request", "send_outlook_email",
+        ])
+        self.assertEqual(send.call_count, 4)
+        self.assertEqual(send.call_args_list[1].args[0].data, send.call_args_list[2].args[0].data)
 
 if __name__ == "__main__":
     unittest.main()
