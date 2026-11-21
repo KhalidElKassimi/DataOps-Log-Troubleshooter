@@ -147,9 +147,18 @@ class AgentContextTests(unittest.TestCase):
         # This fixture tests patch mechanics, not a business rule or a proposed price.
         with redirect_stdout(io.StringIO()):
             self.ns["execute_tool"]("read_ingestion_notebook", {})
+            refused = self.ns["execute_tool"]("create_azure_devops_pull_request", {
+                "title": "test", "edits": [{"start_line": 3, "end_line": 3, "replacement_section": replacement}],
+                "explanation": "fixture",
+            })
+            self.assertEqual(refused["status"], "error")
+            assessed = self.ns["execute_tool"]("assess_incident", {
+                "category": "code", "reason": "None in non-nullable field.", "start_line": 3, "end_line": 3,
+            })
+            self.assertEqual(assessed["fix_allowed_lines"], "1-3")
             result = self.ns["execute_tool"]("create_azure_devops_pull_request", {
-                "title": "test", "start_line": 3, "end_line": 3,
-                "replacement_section": replacement, "explanation": "fixture",
+                "title": "test", "edits": [{"start_line": 3, "end_line": 3, "replacement_section": replacement}],
+                "explanation": "fixture",
             })
         self.assertEqual(result["status"], "created")
         self.assertEqual(
@@ -275,8 +284,50 @@ class AgentContextTests(unittest.TestCase):
             source.replace("x = '1'", "x = float('1')").replace("print(x)", "print(x + 1)"),
         )
         for replacement in ("x = float('1')\nprint(x + 1)", "y = 2\n# COMMAND ----------\nprint(x)"):
-            with self.subTest(replacement=replacement), self.assertRaisesRegex(ValueError, "marqueurs"):
+            with self.subTest(replacement=replacement), self.assertRaisesRegex(ValueError, "marqueur"):
                 self.ns["apply_line_patch"](source, 2, 8 if "float" in replacement else 2, replacement)
+
+    def test_multi_cell_fix_uses_one_edit_per_cell_on_real_notebook(self):
+        source = (ROOT / "notebooks" / "01_ingest_sales_pipeline.py").read_text(encoding="utf-8")
+        lines = source.splitlines()
+        self.assertTrue(lines[65].startswith("df_bad =") and lines[76].startswith("df_bad.write"))
+        with self.assertRaisesRegex(ValueError, "66-66, 74-74, 76-77"):
+            self.ns["apply_edits"](source, [{"start_line": 66, "end_line": 77, "replacement_section": "df_bad = 1"}])
+        result = self.ns["apply_edits"](source, [
+            {"start_line": 77, "end_line": 77, "replacement_section": "df_clean.write.format(\"delta\").mode(\"append\").saveAsTable(silver_table)"},
+            {"start_line": 66, "end_line": 66, "replacement_section": "df_bad = spark.createDataFrame(bad_data, bad_batch_schema)\ndf_clean = df_bad.withColumn(\"unit_price\", col(\"unit_price\").cast(\"double\"))"},
+        ])
+        self.assertIn("df_clean = df_bad", result)
+        self.assertTrue(result.splitlines()[-1].startswith("df_clean.write"))
+        self.assertEqual(
+            [line for line in result.splitlines() if self.ns["is_cell_marker"](line)],
+            [line for line in lines if self.ns["is_cell_marker"](line)],
+        )
+        with self.assertRaisesRegex(ValueError, "chevauche"):
+            self.ns["apply_edits"](source, [
+                {"start_line": 61, "end_line": 64, "replacement_section": "bad_data = []"},
+                {"start_line": 63, "end_line": 66, "replacement_section": "df_bad = 1"},
+            ])
+        cells = self.ns["cells_around"](source, [66, 77])
+        self.assertIn("53: # Données corrompues", cells)
+        self.assertIn("77: df_bad.write", cells)
+        self.assertNotIn("44: ", cells)
+
+    def test_edits_are_limited_to_error_cells_and_keep_rest_of_notebook_identical(self):
+        source = (ROOT / "notebooks" / "01_ingest_sales_pipeline.py").read_text(encoding="utf-8").replace("\n", "\r\n")
+        allowed = self.ns["cell_line_numbers"](source, list(range(74, 78)))
+        self.assertEqual(self.ns["format_ranges"](allowed), "73-77")
+        with self.assertRaisesRegex(ValueError, "Lignes autorisées : 73-77"):
+            self.ns["apply_edits"](source, [
+                {"start_line": 32, "end_line": 32, "replacement_section": '    StructField("unit_price", StringType(), False),'},
+            ], allowed)
+        fixed_line = 'df_bad.withColumn("unit_price", df_bad["unit_price"].cast("double")).write.format("delta").mode("append").saveAsTable(silver_table)'
+        result = self.ns["apply_edits"](source, [{"start_line": 74, "end_line": 77, "replacement_section": "\n".join(
+            source.splitlines()[73:76] + [fixed_line]
+        )}], allowed)
+        before, after = source.split("\r\n"), result.split("\r\n")
+        self.assertEqual(len(before), len(after))
+        self.assertEqual([i + 1 for i, (a, b) in enumerate(zip(before, after)) if a != b], [77])
 
     def test_line_patch_targets_position_and_rejects_invalid_ranges(self):
         source = "x = 1\ny = 2\nx = 1\n"
@@ -350,7 +401,7 @@ class AgentContextTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "PR non créée"):
             self._check_pr_workflow("code", [
                 {"status": "error", "retryable": True, "message": "patch invalide"},
-            ] * 3)
+            ] * 8)
 
     def test_invalid_tool_arguments_are_returned_to_model_without_execution(self):
         self.ns.update(
