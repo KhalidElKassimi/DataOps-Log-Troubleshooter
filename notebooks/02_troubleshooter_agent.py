@@ -772,6 +772,8 @@ def run_agent_diagnosis(error_log: str):
             "tools": AGENT_TOOLS,
             "tool_choice": {"type": "function", "function": {"name": required_tool}} if required_tool else "none",
             "parallel_tool_calls": False,
+            # Azure OpenAI réserve max_tokens dans le quota TPM : une borne explicite limite les HTTP 429.
+            "max_tokens": 2000,
             "temperature": 0.1
         }
         

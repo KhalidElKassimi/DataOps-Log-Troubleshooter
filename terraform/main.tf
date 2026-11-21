@@ -71,7 +71,7 @@ resource "azurerm_cognitive_deployment" "ai_model" {
 
   sku {
     name     = "GlobalStandard"
-    capacity = 10 # 10k TPM
+    capacity = var.ai_model_capacity # milliers de TPM
   }
 }
 

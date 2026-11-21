@@ -22,3 +22,9 @@ variable "azure_devops_pat" {
   sensitive   = true
   default     = ""
 }
+
+variable "ai_model_capacity" {
+  type        = number
+  description = "Capacité du déploiement gpt-4.1-mini en milliers de TPM (10 provoque des HTTP 429 : chaque tour renvoie tout le contexte)"
+  default     = 50
+}
