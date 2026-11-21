@@ -782,6 +782,7 @@ def run_agent_diagnosis(error_log: str):
     patch_attempts = 0
     pr_blocked = None
     email_attempted = False
+    invalid_arguments = 0
     for turn in range(12):
         if not ticket_created:
             required_tool = "create_azure_devops_work_item"
@@ -838,7 +839,25 @@ def run_agent_diagnosis(error_log: str):
                 f_name = func.get("name")
                 if f_name != required_tool:
                     raise RuntimeError(f"Action inattendue : {f_name}. Action attendue : {required_tool}.")
-                f_args = json.loads(func.get("arguments", "{}"))
+                try:
+                    f_args = json.loads(func.get("arguments") or "{}")
+                    if not isinstance(f_args, dict):
+                        raise ValueError("objet JSON attendu")
+                except ValueError as error:
+                    # JSON malformé (ex. antislash non échappé dans du code) : rien n'est exécuté, le modèle reformule.
+                    invalid_arguments += 1
+                    if invalid_arguments >= 3:
+                        raise RuntimeError(f"Arguments JSON invalides pour {f_name} après 3 tentatives ({error})") from None
+                    print(f"⚠️ Arguments JSON invalides pour '{f_name}' ({error}) : aucune action exécutée, reformulation demandée.")
+                    messages.append({
+                        "role": "tool", "tool_call_id": tc_id, "name": f_name,
+                        "content": json.dumps({
+                            "status": "error", "retryable": True,
+                            "message": f"Arguments JSON invalides ({error}) : aucune action exécutée. "
+                                       "Renvoyez l'appel avec un JSON valide ; dans les chaînes, échappez chaque antislash (\\\\).",
+                        }, ensure_ascii=False),
+                    })
+                    continue
                 result = execute_tool(f_name, f_args)
                 if f_name == "create_azure_devops_work_item" and result.get("status") != "created":
                     failed_work_item = result.get("message") or "Création du ticket non confirmée."

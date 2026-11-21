@@ -352,6 +352,33 @@ class AgentContextTests(unittest.TestCase):
                 {"status": "error", "retryable": True, "message": "patch invalide"},
             ] * 3)
 
+    def test_invalid_tool_arguments_are_returned_to_model_without_execution(self):
+        self.ns.update(
+            foundry_endpoint="https://example.invalid", ai_model_name="test", pipeline_name="test",
+            SYSTEM_PROMPT="test", AGENT_TOOLS=[],
+        )
+        tools = [
+            "create_azure_devops_work_item", "read_ingestion_notebook", "assess_incident",
+            "create_azure_devops_pull_request", "send_outlook_email",
+        ]
+        calls = [(name, "{}") for name in tools]
+        calls.insert(3, ("create_azure_devops_pull_request", '{"replacement_section": "\\unit"}'))
+        replies = [{"choices": [{"message": {"tool_calls": [
+            {"id": str(index), "function": {"name": name, "arguments": arguments}},
+        ]}}]} for index, (name, arguments) in enumerate(calls)]
+        replies.append({"choices": [{"message": {"content": "done"}}]})
+        execute = self.ns["execute_tool"] = Mock(side_effect=[
+            {"status": "created"}, {"status": "read"}, {"status": "assessed", "category": "code"},
+            {"status": "created"}, {"status": "sent"},
+        ])
+        model = self.ns["request_model"] = Mock(side_effect=replies)
+        with redirect_stdout(io.StringIO()):
+            self.ns["run_agent_diagnosis"]("error")
+        self.assertEqual([call.args[0] for call in execute.call_args_list], tools)
+        feedback = json.loads(model.call_args_list[4].args[0].data)["messages"][-1]
+        self.assertEqual((feedback["role"], feedback["tool_call_id"]), ("tool", "3"))
+        self.assertIn("JSON invalides", feedback["content"])
+
     def _check_pr_workflow(self, category, patches, assessments=None):
         self.ns.update(
             foundry_endpoint="https://example.invalid", ai_model_name="test", pipeline_name="test",
