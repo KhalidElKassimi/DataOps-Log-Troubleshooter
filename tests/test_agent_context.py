@@ -9,7 +9,7 @@ import types
 import unittest
 from contextlib import redirect_stdout
 from unittest.mock import Mock, patch
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request
 
 from databricks.sdk.service.jobs import NotebookTask, Run, RunOutput, RunTask
@@ -148,7 +148,7 @@ class AgentContextTests(unittest.TestCase):
         with redirect_stdout(io.StringIO()):
             self.ns["execute_tool"]("read_ingestion_notebook", {})
             result = self.ns["execute_tool"]("create_azure_devops_pull_request", {
-                "title": "test", "original_section": original,
+                "title": "test", "start_line": 3, "end_line": 3,
                 "replacement_section": replacement, "explanation": "fixture",
             })
         self.assertEqual(result["status"], "created")
@@ -163,7 +163,7 @@ class AgentContextTests(unittest.TestCase):
         helper.create_pull_request("repo", "fix", "main", "title", "description")
         self.assertTrue(helper.request.call_args.kwargs["data"]["isDraft"])
         with self.assertRaises(ValueError):
-            self.ns["apply_section_patch"](self.content, self.content, "pass")
+            self.ns["apply_line_patch"](self.content, 1, 3, "pass")
 
     def test_job_uses_content_addressed_source_and_deployment_commit(self):
         import importlib.util
@@ -210,6 +210,22 @@ class AgentContextTests(unittest.TestCase):
                     self.ns["request_model"](req)
                 self.assertEqual(send.call_count, calls)
 
+    def test_read_timeout_is_retried_with_bounded_attempts(self):
+        req = Request("https://example.invalid", data=b"{}")
+        with patch("urllib.request.urlopen", side_effect=[
+            TimeoutError("The read operation timed out"),
+            URLError(TimeoutError("timed out")),
+            io.BytesIO(b'{"choices": []}'),
+        ]) as send, patch("time.sleep"), redirect_stdout(io.StringIO()):
+            self.assertEqual(self.ns["request_model"](req), {"choices": []})
+            self.assertEqual(send.call_count, 3)
+        for error, calls in ((TimeoutError("timed out"), 4), (URLError("dns failure"), 1)):
+            with self.subTest(error=error), patch("urllib.request.urlopen", side_effect=error) as send, \
+                    patch("time.sleep"), redirect_stdout(io.StringIO()):
+                with self.assertRaises((RuntimeError, URLError)):
+                    self.ns["request_model"](req)
+                self.assertEqual(send.call_count, calls)
+
     def test_rate_limit_after_pr_does_not_repeat_tool_and_continues_to_email(self):
         def response(tool):
             message = {"content": "done"}
@@ -245,11 +261,18 @@ class AgentContextTests(unittest.TestCase):
         source = "# Databricks notebook source\r\nx = 0\r\n# COMMAND ----------\r\ny = 1\r\n# COMMAND ----------\r\nz = 2\r\n"
         original = "# COMMAND ----------\ny = 1\n# COMMAND ----------"
         self.assertEqual(
-            self.ns["apply_section_patch"](source, original, original.replace("y = 1", "y = 3")),
+            self.ns["apply_line_patch"](source, 3, 5, original.replace("y = 1", "y = 3")),
             source.replace("y = 1", "y = 3"),
         )
         with self.assertRaises(ValueError):
-            self.ns["apply_section_patch"](source, original, "y = 3")
+            self.ns["apply_line_patch"](source, 3, 5, "y = 3")
+
+    def test_line_patch_targets_position_and_rejects_invalid_ranges(self):
+        source = "x = 1\ny = 2\nx = 1\n"
+        self.assertEqual(self.ns["apply_line_patch"](source, 3, 3, "x = 9"), "x = 1\ny = 2\nx = 9\n")
+        for start, end, replacement in ((0, 1, "x = 9"), (2, 1, "x = 9"), (1, 4, "x = 9"), (True, 1, "x = 9"), (2, 2, "y = 2")):
+            with self.subTest(start=start, end=end), self.assertRaises(ValueError):
+                self.ns["apply_line_patch"](source, start, end, replacement)
 
     def test_code_assessment_requires_evidence_from_read_source(self):
         self.ns["INGEST_SOURCE"] = {"content": self.content}
