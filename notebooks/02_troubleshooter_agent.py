@@ -166,6 +166,20 @@ def apply_line_patch(source: str, start_line: Any, end_line: Any, replacement: s
         raise ValueError("Le correctif doit viser un bloc, pas le notebook entier.")
     if old_lines == new_lines:
         raise ValueError("Le correctif doit modifier les lignes visées.")
+    def is_marker(line: str) -> bool:
+        return line.lstrip().startswith(("# COMMAND", "# MAGIC", "# Databricks notebook source"))
+    old_markers = [line for line in old_lines if is_marker(line)]
+    if [line.strip() for line in old_markers] != [line.strip() for line in new_lines if is_marker(line)]:
+        numbers = ", ".join(str(start_line + index) for index, line in enumerate(old_lines) if is_marker(line))
+        raise ValueError(
+            f"Conservez les marqueurs Databricks : la plage {start_line}-{end_line} "
+            + (f"contient les marqueurs des lignes {numbers}, à recopier à l'identique et dans le même ordre dans replacement_section"
+               if numbers else "n'en contient aucun, n'en ajoutez pas")
+            + " ; sinon limitez la plage aux lignes Python d'une seule cellule."
+        )
+    # Les marqueurs conservés reprennent leur texte d'origine (espaces compris).
+    markers = iter(old_markers)
+    new_lines = [next(markers) if is_marker(line) else line for line in new_lines]
     while old_lines and new_lines and old_lines[0] == new_lines[0]:
         old_lines.pop(0)
         new_lines.pop(0)
@@ -176,8 +190,6 @@ def apply_line_patch(source: str, start_line: Any, end_line: Any, replacement: s
         end -= 1
     if max(len(old_lines), len(new_lines)) > 20 or max(len("\n".join(old_lines)), len("\n".join(new_lines))) > 4000:
         raise ValueError("Réduisez le correctif à 20 lignes modifiées maximum ; ne recopiez pas les cellules voisines.")
-    if any(line.lstrip().startswith(("# COMMAND", "# MAGIC", "# Databricks notebook source")) for line in old_lines + new_lines):
-        raise ValueError("Conservez les marqueurs Databricks et modifiez uniquement les lignes Python de la cellule.")
     ending = "\r\n" if source_lines[min(start, len(source_lines) - 1)].endswith("\r\n") else "\n"
     edited = ending.join(new_lines)
     if new_lines and (end < len(source_lines) or (end > 0 and source_lines[end - 1].endswith("\n"))):

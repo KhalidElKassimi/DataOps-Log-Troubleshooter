@@ -267,6 +267,17 @@ class AgentContextTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.ns["apply_line_patch"](source, 3, 5, "y = 3")
 
+    def test_patch_across_cells_keeps_markers_and_rejects_dropped_or_added_ones(self):
+        source = "# Databricks notebook source\nx = '1'\n\n# COMMAND ----------\n# MAGIC %md\n\n# COMMAND ----------\nprint(x)\n"
+        fixed = "x = float('1')\n\n# COMMAND ----------\n# MAGIC %md \n\n# COMMAND ----------\nprint(x + 1)"
+        self.assertEqual(
+            self.ns["apply_line_patch"](source, 2, 8, fixed),
+            source.replace("x = '1'", "x = float('1')").replace("print(x)", "print(x + 1)"),
+        )
+        for replacement in ("x = float('1')\nprint(x + 1)", "y = 2\n# COMMAND ----------\nprint(x)"):
+            with self.subTest(replacement=replacement), self.assertRaisesRegex(ValueError, "marqueurs"):
+                self.ns["apply_line_patch"](source, 2, 8 if "float" in replacement else 2, replacement)
+
     def test_line_patch_targets_position_and_rejects_invalid_ranges(self):
         source = "x = 1\ny = 2\nx = 1\n"
         self.assertEqual(self.ns["apply_line_patch"](source, 3, 3, "x = 9"), "x = 1\ny = 2\nx = 9\n")
